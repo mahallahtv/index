@@ -689,9 +689,9 @@ OfflineLicenseSystem.prototype.showAdminPanel = function(password) {
     var license = generatedLicenses[i];
     var isCurrentDevice = (license.deviceId === this.deviceId) ? 'current-device' : '';
     
-    licenseListHTML += '<tr class="' + isCurrentDevice + '">' +
+    licenseListHTML += '<tr class="current-device-row">' +
         '<td><code class="license-code-cell">' + license.code + '</code></td>' +
-        '<td><span class="package-badge ' + (license.package || 'basic') + '">' + (license.package || 'N/A') + '</span></td>' +
+        '<td class="text-center"><span class="table-package-badge ' + (license.package || 'basic') + '">' + (license.package || 'N/A') + '</span></td>' +
         '<td class="device-id-cell">' + (license.deviceId || 'N/A') + '</td>' +
         '<td>' + (license.customerName || 'N/A') + '</td>' +
         '<td>' + new Date(license.generatedAt).toLocaleDateString('id-ID') + '</td>' +
@@ -919,19 +919,19 @@ OfflineLicenseSystem.prototype.showAdminPanel = function(password) {
             '</thead>' +
             '<tbody>';
         
-        for (var i = 0; i < generatedLicenses.length; i++) {
-            var license = generatedLicenses[i];
-            var isCurrentDevice = (license.deviceId === self.deviceId) ? 'current-device' : '';
-            
-            licenseListHTML += '<tr class="' + isCurrentDevice + '">' +
-            '<td><code class="license-code-cell">' + license.code + '</code></td>' +
-            '<td><span class="package-badge ' + (license.package || 'basic') + '">' + (license.package || 'N/A') + '</span></td>' +
-            '<td class="device-id-cell">' + (license.deviceId || 'N/A') + '</td>' +
-            '<td>' + (license.customerName || 'N/A') + '</td>' +
-            '<td>' + new Date(license.generatedAt).toLocaleDateString('id-ID') + '</td>' +
-            '<td><span class="status-badge ' + license.status + '">' + license.status.toUpperCase() + '</span></td>' +
-            '</tr>';
-        }
+            for (var i = 0; i < generatedLicenses.length; i++) {
+                var license = generatedLicenses[i];
+                var isCurrentDevice = (license.deviceId === this.deviceId) ? 'current-device' : '';
+                
+                licenseListHTML += '<tr class="current-device-row">' +
+                    '<td><code class="license-code-cell">' + license.code + '</code></td>' +
+                    '<td class="text-center"><span class="table-package-badge ' + (license.package || 'basic') + '">' + (license.package || 'N/A') + '</span></td>' +
+                    '<td class="device-id-cell">' + (license.deviceId || 'N/A') + '</td>' +
+                    '<td>' + (license.customerName || 'N/A') + '</td>' +
+                    '<td>' + new Date(license.generatedAt).toLocaleDateString('id-ID') + '</td>' +
+                    '<td><span class="status-badge ' + license.status + '">' + license.status.toUpperCase() + '</span></td>' +
+                '</tr>';
+                }
         
         licenseListHTML += '</tbody></table>';
         
@@ -1290,7 +1290,7 @@ OfflineLicenseSystem.prototype.modifyAddress = function() {
     if (addressElement) {
         var address = addressElement.textContent;
         var modifiedAddress = address.replace(/Desa\s+\w+,?\s*/i, '');
-        addressElement.textContent = modifiedAddress || 'Dev: Rocky CHK';
+        addressElement.textContent = modifiedAddress || 'Masjid Al-Muthmainnah';
     }
 };
 
@@ -1638,9 +1638,6 @@ OfflineLicenseSystem.prototype.showActivationPopup = function() {
     overlay.innerHTML = [
         '<div class="offline-license-popup">',
         '    <div class="popup-header">',
-        '        <div class="header-icon">',
-        '            <i class="bi bi-shield-lock"></i>',
-        '        </div>',
         '        <h2>AKTIVASI LISENSI OFFLINE</h2>',
         '        <p class="subtitle">Masukkan kode lisensi yang diberikan admin</p>',
         '    </div>',
@@ -1887,10 +1884,13 @@ OfflineLicenseSystem.prototype.showLicenseDetailsPopup = function() {
         document.body.appendChild(overlay);
         
         var self = this;
-        document.getElementById('activateLicenseBtn').addEventListener('click', function() {
-            self.removePopup(overlay);
-            self.showActivationPopup();
-        });
+        var activateBtn = document.getElementById('activateLicenseBtn');
+        if (activateBtn) {
+            activateBtn.addEventListener('click', function() {
+                self.removePopup(overlay);
+                self.showActivationPopup();
+            });
+        }
         
         return;
     }
@@ -1968,17 +1968,17 @@ OfflineLicenseSystem.prototype.showLicenseDetailsPopup = function() {
         '                </ul>',
         '            </div>',
         '            ',
-                    '<div class="action-buttons">',
-                    '    <button onclick="showUpgradeFromMenu()" class="btn-upgrade-now">',
-                    '        <i class="bi bi-arrow-up-circle"></i> UPGRADE LISENSI',
-                    '    </button>',
-                    '    <button id="deactivateLicenseBtn" class="btn-deactivate">',
-                    '        <i class="bi bi-power"></i> KELUAR DARI LISENSI',
-                    '    </button>',
-                    '    <button id="closeDetailsBtn" class="btn-close">',
-                    '        <i class="bi bi-check-lg"></i> TUTUP',
-                    '    </button>',
-                    '</div>',
+        '            <div class="action-buttons">',
+        '                <button id="upgradeLicenseBtn" class="btn-upgrade-now">',
+        '                    <i class="bi bi-arrow-up-circle"></i> UPGRADE LISENSI',
+        '                </button>',
+        '                <button id="deactivateLicenseBtn" class="btn-deactivate">',
+        '                    <i class="bi bi-power"></i> KELUAR DARI LISENSI',
+        '                </button>',
+        '                <button id="closeDetailsBtn" class="btn-close">',
+        '                    <i class="bi bi-check-lg"></i> TUTUP',
+        '                </button>',
+        '            </div>',
         '        </div>',
         '    </div>',
         '</div>'
@@ -1989,22 +1989,32 @@ OfflineLicenseSystem.prototype.showLicenseDetailsPopup = function() {
     
     var self = this;
     
-    // Event listeners
-    document.getElementById('upgradeLicenseBtn').addEventListener('click', function() {
-        self.removePopup(overlay);
-        self.showUpgradePopup();
-    });
+    // Event listeners dengan validasi
+    var upgradeBtn = document.getElementById('upgradeLicenseBtn');
+    var deactivateBtn = document.getElementById('deactivateLicenseBtn');
+    var closeBtn = document.getElementById('closeDetailsBtn');
     
-    document.getElementById('deactivateLicenseBtn').addEventListener('click', function() {
-        if (confirm('Apakah Anda yakin ingin keluar dari lisensi saat ini?\n\nSemua data lisensi akan dihapus dari perangkat ini.')) {
-            self.deactivateLicense();
+    if (upgradeBtn) {
+        upgradeBtn.addEventListener('click', function() {
             self.removePopup(overlay);
-        }
-    });
+            self.showUpgradePopup();
+        });
+    }
     
-    document.getElementById('closeDetailsBtn').addEventListener('click', function() {
-        self.removePopup(overlay);
-    });
+    if (deactivateBtn) {
+        deactivateBtn.addEventListener('click', function() {
+            if (confirm('Apakah Anda yakin ingin keluar dari lisensi saat ini?\n\nSemua data lisensi akan dihapus dari perangkat ini.')) {
+                self.deactivateLicense();
+                self.removePopup(overlay);
+            }
+        });
+    }
+    
+    if (closeBtn) {
+        closeBtn.addEventListener('click', function() {
+            self.removePopup(overlay);
+        });
+    }
     
     // Adjust height
     setTimeout(function() {
@@ -2062,9 +2072,11 @@ OfflineLicenseSystem.prototype.showBriefLicenseInfo = function() {
     document.body.appendChild(licenseBadge);
     
     var self = this;
-    licenseBadge.addEventListener('click', function() {
-        self.showLicenseDetailsPopup();
-    });
+    if (licenseBadge) {
+        licenseBadge.addEventListener('click', function() {
+            self.showLicenseDetailsPopup();
+        });
+    }
     
     // Hover effect
     licenseBadge.addEventListener('mouseenter', function() {
@@ -2660,7 +2672,7 @@ OfflineLicenseSystem.prototype.restoreAddress = function() {
   var addressElement = document.getElementById('masjidAddress');
   if (addressElement) {
       // Kembalikan alamat asli atau default
-      addressElement.textContent = addressElement.getAttribute('data-original-address') || 'Dev: Rocky CHK';
+      addressElement.textContent = addressElement.getAttribute('data-original-address') || 'Masjid Al-Muthmainnah';
   }
 };
 
@@ -3425,9 +3437,6 @@ OfflineLicenseSystem.prototype.showDemoExpiredPopup = function() {
         '    ',
         '    <div class="popup-body">',
         '        <div class="demo-expired-message">',
-        '            <div class="warning-icon">',
-        '                <i class="bi bi-clock-fill"></i>',
-        '            </div>',
         '            ',
         '            <h3 class="text-center mb-4">Waktu Demo Telah Habis</h3>',
         '            <p class="text-center mb-4">Silahkan pilih paket untuk melanjutkan penggunaan:</p>',
@@ -4496,6 +4505,7 @@ OfflineLicenseSystem.prototype.addStyles = function() {
       /* ==================== ADMIN PANEL ==================== */
       .admin-panel {
           display: grid;
+          padding: 0px;
           gap: 20px;
       }
       
@@ -4684,6 +4694,51 @@ OfflineLicenseSystem.prototype.addStyles = function() {
         background: rgba(255, 193, 7, 0.1);
         color: #856404;
         border: 1px solid rgba(255, 193, 7, 0.3);
+    }
+
+    /* ==================== PACKAGE BADGE IN TABLE ==================== */
+    .table-package-badge {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: bold;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        min-width: 70px;
+        text-align: center;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .table-package-badge.trial {
+        background: linear-gradient(135deg, rgba(253, 126, 20, 0.15) 0%, rgba(253, 126, 20, 0.1) 100%);
+        color: #fd7e14;
+        border: 1px solid rgba(253, 126, 20, 0.3);
+    }
+
+    .table-package-badge.basic {
+        background: linear-gradient(135deg, rgba(13, 110, 253, 0.15) 0%, rgba(13, 110, 253, 0.1) 100%);
+        color: #0d6efd;
+        border: 1px solid rgba(13, 110, 253, 0.3);
+    }
+
+    .table-package-badge.premium {
+        background: linear-gradient(135deg, rgba(111, 66, 193, 0.15) 0%, rgba(111, 66, 193, 0.1) 100%);
+        color: #6f42c1;
+        border: 1px solid rgba(111, 66, 193, 0.3);
+    }
+
+    .table-package-badge.vip {
+        background: linear-gradient(135deg, rgba(255, 193, 7, 0.15) 0%, rgba(255, 193, 7, 0.1) 100%);
+        color: #856404;
+        border: 1px solid rgba(255, 193, 7, 0.3);
+    }
+
+    /* Center align for package column */
+    .admin-table td:nth-child(2) {
+        text-align: center;
+        vertical-align: middle;
+        padding: 10px 5px;
     }
 
     /* Kolom Device ID */
@@ -6416,4 +6471,3 @@ if (typeof window !== 'undefined') {
   window.copyToClipboard = copyToClipboard;
   window.showGlobalToast = showGlobalToast;
 }
-
