@@ -1,0 +1,113 @@
+function applyPrayerOffsets() {
+  for (var prayer in originalPrayerTimes) {
+    const baseTime = originalPrayerTimes[prayer];
+    const offset = prayerOffsets[prayer] || 0;
+    adzanSchedule[prayer] = addMinutes(baseTime, offset);
+  }
+  updatePrayerTimesUI();
+}
+
+// ==================== INTEGRASI SCREEN MANAGER ====================
+// Pastikan screen manager tidak mengganggu fungsi utama
+
+// Di window.onload, tambahkan:
+window.onload = function() {
+    console.log('Aplikasi Adzan Al-Muthmainnah v2.0 diinisialisasi');
+    
+    // Deteksi STB
+    isSTB = navigator.userAgent.toLowerCase().includes('stb') || !('ontouchstart' in window);
+
+    // Cek dan update tampilan Jumat
+    updateJumatDisplay();
+    
+    // Load data dari localStorage
+    loadSettings();
+
+    // Load countdown settings
+    loadCountdownSettings();
+    loadPrayerOffsets();
+
+    updateHijri();
+    // Inisialisasi komponen
+    initClock();
+    initDate();
+    initHijri();
+    initPrayerTimes();
+    initCarousels();
+    initRunningText();
+
+    applyPrayerOffsets();
+
+    // Setup event listeners sederhana
+    setupSimpleEvents();
+    
+    // Update Jumat display setiap menit (untuk handle pergantian hari)
+    setInterval(updateJumatDisplay, 60000);
+    
+    // Periksa apakah screen manager sudah dimuat
+    if (typeof screenManager !== 'undefined' && screenManager) {
+        console.log('Screen Manager terintegrasi');
+        
+        // Jangan start jika screen sedang off
+        if (screenManager.isScreenOff) {
+            console.log('Screen sedang dalam keadaan OFF');
+        }
+    }
+};
+
+// Modifikasi fungsi stopAllAudio untuk integrasi
+function stopAllAudio() {
+    try {
+        const audioElements = [
+            'audioShalawat',
+            'audioAdzan', 
+            'audioBeep',
+            'audioRooster'
+        ];
+        
+        audioElements.forEach(id => {
+            const audio = document.getElementById(id);
+            if (audio) {
+                audio.pause();
+                audio.currentTime = 0;
+                audio.loop = false;
+            }
+        });
+        
+        // Hentikan interval Imsak dan Syuruq jika aktif
+        if (window.imsakState && imsakState.interval) {
+            clearInterval(imsakState.interval);
+            imsakState.interval = null;
+            imsakState.active = false;
+        }
+        
+        if (window.syuruqState && syuruqState.interval) {
+            clearInterval(syuruqState.interval);
+            syuruqState.interval = null;
+            syuruqState.active = false;
+        }
+        
+        // Reset flag rooster jika audio dihentikan paksa
+        if (countdownState.prayer === 'imsak') {
+            if (window.roosterPlayedToday !== undefined) {
+                roosterPlayedToday = false;
+            }
+        }
+        
+        // Tutup popup Imsak dan Syuruq jika terbuka
+        const popups = ['popupImsakOverlay', 'popupSyuruqOverlay', 'popupAdzanOverlay', 'iqamahPopupOverlay', 'warningPopupOverlay'];
+        popups.forEach(popupId => {
+            const popup = document.getElementById(popupId);
+            if (popup) popup.style.display = 'none';
+        });
+        
+    } catch (e) {
+        console.log('Error stopAllAudio:', e);
+    }
+}
+
+
+</script>
+</body>
+</html>
+

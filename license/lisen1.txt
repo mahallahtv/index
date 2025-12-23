@@ -1,0 +1,1677 @@
+// File: offline-license-system-unified-fixed.js
+// SISTEM LISENSI OFFLINE UNIFIED - Versi ES5 untuk STB Indihome
+// DENGAN FUNGSI UPGRADE LENGKAP - FIXED STYLE VERSION
+
+//CONSTRUCTOR
+var OfflineLicenseSystem = function() {
+
+    // Kode lisensi valid (bisa diubah oleh admin)
+    this.validLicenseKeys = {
+        'RH-MTV-1Q2W3E': { // Trial
+            package: 'trial',
+            expiryDays: 2,
+            created: '2024-01-01'
+        },
+        'RH-MTV-4R5T6Y': { // Dasar
+            package: 'basic', 
+            expiryDays: 365,
+            created: '2024-01-01'
+        },
+        'RH-MTV-7U8I9O': { // Premium
+            package: 'premium',
+            expiryDays: 365,
+            created: '2024-01-01'
+        },
+        'RH-MTV-0PASD1': { // VIP
+            package: 'vip',
+            expiryDays: 9999,
+            created: '2024-01-01'
+        },
+        'RH-MTV-VIP001': { // Kode khusus untuk user DEV-MJAH2YDI-GWZ450
+            package: 'vip',
+            expiryDays: 9999,
+            created: '2025-12-18'
+        },
+        'RH-MTV-BAS001': { // Kode contoh untuk paket dasar
+            package: 'basic',
+            expiryDays: 365,
+            created: '2025-12-18'
+        },
+        'RH-MTV-PRE001': { // Kode contoh untuk paket premium
+            package: 'premium',
+            expiryDays: 365,
+            created: '2025-12-18'
+        }
+    };
+
+    // Load validLicenseKeys dari localStorage (jika ada)
+    this.loadValidLicenseKeys();
+    
+    // Data paket dengan fitur
+    this.licensePackages = {
+        'trial': {
+            name: 'Uji Coba',
+            price: 50000,
+            features: {
+                hiddenLogo: true,
+                hiddenSlides: [2, 3, 4],
+                hiddenPowerButton: true,
+                hiddenVillageName: true,
+                maxImages: 2,
+                hiddenImsakSyuruq: true,  // INI AKAN HIDE BOTH IMSAK & SYURUQ
+                maghribIsyaActiveMinutes: 15,
+                hiddenSettingsButtons: ['data-masjid', 'running-text', 'slider-duration'],
+                hiddenAdzanButtons: ['countdown-adzan', 'countdown-iqamah', 'overlay-duration'],
+                hiddenAudio: ['shalawat', 'adzan'],
+                ads: {
+                    enabled: true,
+                    duration: 15,
+                    interval: 10,
+                    overlayBehavior: 'behind'
+                }
+            }
+        },
+        'basic': {
+            name: 'Dasar',
+            price: 340000,
+            features: {
+                hiddenLogo: true,
+                hiddenSlides: [2, 4],
+                hiddenPowerButton: false,
+                hiddenVillageName: false,
+                maxImages: 2,
+                hiddenImsakSyuruq: false,
+                maghribIsyaActiveMinutes: 0,
+                hiddenSettingsButtons: ['slider-duration'],
+                hiddenAdzanButtons: ['overlay-duration'],
+                hiddenAudio: ['shalawat', 'adzan'],
+                ads: {
+                    enabled: true,
+                    duration: 5,
+                    interval: 300,
+                    overlayBehavior: 'behind'
+                }
+            }
+        },
+        'premium': {
+            name: 'Premium',
+            price: 570000,
+            features: {
+                hiddenLogo: false,
+                hiddenSlides: [],
+                hiddenPowerButton: false,
+                hiddenVillageName: false,
+                maxImages: 5,
+                hiddenImsakSyuruq: false,
+                maghribIsyaActiveMinutes: 0,
+                hiddenSettingsButtons: [],
+                hiddenAdzanButtons: [],
+                hiddenAudio: [],
+                ads: { enabled: false }
+            }
+        },
+        'vip': {
+            name: 'VIP',
+            price: 1420000,
+            features: {
+                hiddenLogo: false,
+                hiddenSlides: [],
+                hiddenPowerButton: false,
+                hiddenVillageName: false,
+                maxImages: 7,
+                hiddenImsakSyuruq: false,
+                maghribIsyaActiveMinutes: 0,
+                hiddenSettingsButtons: [],
+                hiddenAdzanButtons: [],
+                hiddenAudio: [],
+                ads: { enabled: false }
+            }
+        }
+    };
+    
+    this.currentLicense = null;
+    this.deviceId = this.getDeviceId();
+    this.adsTimer = null;
+    this.isShowingAds = false;
+    this.demoUsedKey = 'demo_used_' + this.deviceId;
+
+    
+    // GANTI URL DATABASE dengan yang benar:
+    // GANTI dengan config yang sesuai struktur data Anda
+    this.firebaseConfig = {
+        apiKey: "AIzaSyBQpRmeu0BXMwUbOiBM1PJQbpf50Z8a5aQ",
+        authDomain: "adzan-app-license.firebaseapp.com",
+        databaseURL: "https://adzan-app-license-default-rtdb.asia-southeast1.firebasedatabase.app/",
+        projectId: "adzan-app-license",
+        storageBucket: "adzan-app-license.firebasestorage.app",
+        messagingSenderId: "415826888654",
+        appId: "1:415826888654:web:0145336292304240c9cd9f"
+    };
+    this.firebaseApp = null;
+    this.database = null;
+    this.isFirebaseInitialized = false;
+
+
+    
+    // Default gambar iklan
+    this.adImages = [
+        'ads/ad1.jpg',
+        'ads/ad2.jpg',
+        'ads/ad3.jpg'
+    ];
+
+
+};
+
+// Fungsi untuk cek Firebase SDK
+function checkFirebaseLoaded() {
+    console.log('=== CHECKING FIREBASE ===');
+    console.log('window.firebase:', typeof window.firebase);
+    console.log('firebase.database:', window.firebase ? typeof window.firebase.database : 'undefined');
+    console.log('firebase.apps:', window.firebase ? window.firebase.apps : 'undefined');
+    
+    if (typeof firebase === 'undefined') {
+        console.error('ERROR: Firebase SDK not loaded!');
+        alert('Firebase SDK tidak ditemukan. Pastikan script Firebase v8 sudah ditambahkan di HTML.');
+        return false;
+    }
+    
+    return true;
+}
+
+// ==================== FUNGSI FIREBASE ====================
+OfflineLicenseSystem.prototype.initializeFirebase = function() {
+    try {
+        // Cek Firebase SDK
+        if (!checkFirebaseLoaded()) {
+            return false;
+        }
+        
+        // Cek jika sudah diinisialisasi
+        if (this.isFirebaseInitialized && this.database) {
+            console.log('Firebase already initialized');
+            return true;
+        }
+        
+        console.log('Initializing Firebase...');
+        
+        // Initialize Firebase
+        if (!firebase.apps || firebase.apps.length === 0) {
+            this.firebaseApp = firebase.initializeApp(this.firebaseConfig);
+            console.log('New Firebase app initialized');
+        } else {
+            this.firebaseApp = firebase.app();
+            console.log('Using existing Firebase app');
+        }
+        
+        // Get database reference
+        this.database = firebase.database();
+        this.isFirebaseInitialized = true;
+        
+        console.log('Firebase initialized successfully');
+        console.log('Database URL:', this.firebaseConfig.databaseURL);
+        
+        return true;
+        
+    } catch (error) {
+        console.error('ERROR initializing Firebase:', error);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        console.error('Error code:', error.code);
+        
+        // Tampilkan error detail
+        var errorMsg = 'Firebase Error: ' + (error.message || error);
+        this.showToast(errorMsg, 'error');
+        
+        return false;
+    }
+};
+
+OfflineLicenseSystem.prototype.saveLicenseToFirebase = function(licenseData) {
+    if (!this.initializeFirebase()) return false;
+    
+    try {
+        var licenseRef = this.database.ref('licenses/' + licenseData.key);
+        licenseRef.set(licenseData);
+        console.log('License saved to Firebase:', licenseData.key);
+        return true;
+    } catch (error) {
+        console.error('Error saving to Firebase:', error);
+        return false;
+    }
+};
+
+OfflineLicenseSystem.prototype.validateLicenseWithFirebase = function(licenseKey, callback) {
+    if (!this.initializeFirebase()) {
+        if (callback) callback(null);
+        return;
+    }
+    
+    try {
+        var licenseRef = this.database.ref('licenses/' + licenseKey);
+        licenseRef.once('value', function(snapshot) {
+            var data = snapshot.val();
+            if (callback) callback(data);
+        });
+    } catch (error) {
+        console.error('Error validating with Firebase:', error);
+        if (callback) callback(null);
+    }
+};
+
+OfflineLicenseSystem.prototype.checkLicenseStatusFirebase = function(licenseKey) {
+    if (!this.initializeFirebase()) return null;
+    
+    try {
+        var licenseRef = this.database.ref('licenses/' + licenseKey);
+        licenseRef.once('value', function(snapshot) {
+            return snapshot.val();
+        });
+    } catch (error) {
+        console.error('Error checking license:', error);
+        return null;
+    }
+};
+
+OfflineLicenseSystem.prototype.updateLicenseInFirebase = function(licenseKey, updates) {
+    if (!this.initializeFirebase()) return false;
+    
+    try {
+        var licenseRef = this.database.ref('licenses/' + licenseKey);
+        licenseRef.update(updates);
+        console.log('License updated in Firebase:', licenseKey);
+        return true;
+    } catch (error) {
+        console.error('Error updating in Firebase:', error);
+        return false;
+    }
+};
+
+OfflineLicenseSystem.prototype.getAllLicensesFromFirebase = function(callback) {
+    if (!this.initializeFirebase()) {
+        if (callback) callback(null, 'Firebase not initialized');
+        return;
+    }
+    
+    try {
+        console.log('Fetching licenses from Firebase...');
+        var licensesRef = this.database.ref('licenses');
+        
+        licensesRef.once('value', function(snapshot) {
+            console.log('Firebase snapshot received');
+            
+            if (!snapshot.exists()) {
+                console.log('No data in Firebase');
+                if (callback) callback(null, 'No data in Firebase');
+                return;
+            }
+            
+            var data = snapshot.val();
+            console.log('Firebase data keys:', Object.keys(data));
+            
+            // Tampilkan contoh data pertama untuk debug
+            var firstKey = Object.keys(data)[0];
+            console.log('Sample data (first item):', data[firstKey]);
+            
+            if (callback) callback(data, null);
+            
+        }, function(error) {
+            console.error('Firebase error:', error);
+            console.error('Error code:', error.code);
+            if (callback) callback(null, error.message);
+        });
+        
+    } catch (error) {
+        console.error('Exception in getAllLicensesFromFirebase:', error);
+        if (callback) callback(null, error.message);
+    }
+};
+
+OfflineLicenseSystem.prototype.generateLicenseOnFirebase = function(licenseData) {
+    console.log('Generating license for:', licenseData);
+    
+    // 1. Generate kode unik
+    var licenseCode = 'RH-MTV-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+    
+    // 2. Tentukan expiry days berdasarkan paket
+    var expiryDays = 365;
+    var price = this.licensePackages[licenseData.package].price;
+    
+    if (licenseData.package === 'vip') {
+        expiryDays = 9999;
+    } else if (licenseData.package === 'trial') {
+        expiryDays = 2;
+    }
+    
+    // 3. Hitung expiry date
+    var expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + expiryDays);
+    
+    // 4. Data lengkap untuk localStorage
+    var localData = {
+        code: licenseCode,
+        package: licenseData.package,
+        customerName: licenseData.customerName || 'Anonymous',
+        deviceId: licenseData.deviceId || this.deviceId,
+        status: 'pending',
+        generatedAt: new Date().toISOString(),
+        created: new Date().toISOString().split('T')[0],
+        expiryDays: expiryDays,
+        price: price,
+        expiryDate: expiryDate.toISOString()
+    };
+    
+    // 5. SIMPAN KE LOCALSTORAGE DULU
+    var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+    generatedLicenses.push(localData);
+    localStorage.setItem('generated_licenses', JSON.stringify(generatedLicenses));
+    
+    console.log('Saved to localStorage:', localData);
+    
+    // 6. Tambahkan ke validLicenseKeys lokal
+    this.validLicenseKeys[licenseCode] = {
+        package: licenseData.package,
+        expiryDays: expiryDays,
+        created: localData.created,
+        price: price
+    };
+    this.saveValidLicenseKeys();
+    
+    // 7. Data untuk Firebase (sesuai struktur Anda)
+    var firebaseData = {
+        licenseKey: licenseCode,           // Nama field sesuai struktur Anda
+        package: licenseData.package,
+        customerName: licenseData.customerName || 'Anonymous',
+        deviceId: licenseData.deviceId || this.deviceId,
+        status: 'pending',
+        generatedAt: new Date().toISOString(),
+        createdDate: new Date().toISOString().split('T')[0],
+        expiryDate: expiryDate.toISOString(),
+        lastUpdated: new Date().toISOString(),
+        price: price,
+        expiryDays: expiryDays
+    };
+    
+    // 8. Coba simpan ke Firebase (background)
+    this.saveToFirebase(licenseCode, firebaseData);
+    
+    return licenseCode;
+};
+
+OfflineLicenseSystem.prototype.saveToFirebase = function(licenseCode, data) {
+    if (!this.initializeFirebase()) {
+        console.warn('Firebase not available, saving locally only');
+        return false;
+    }
+    
+    try {
+        console.log('Saving to Firebase:', licenseCode, data);
+        
+        var licenseRef = this.database.ref('licenses/' + licenseCode);
+        licenseRef.set(data, function(error) {
+            if (error) {
+                console.error('Firebase save error:', error);
+                // Simpan ke queue untuk retry
+                var failedQueue = JSON.parse(localStorage.getItem('firebase_failed_queue') || '[]');
+                failedQueue.push({
+                    code: licenseCode,
+                    data: data,
+                    timestamp: Date.now(),
+                    error: error.message
+                });
+                localStorage.setItem('firebase_failed_queue', JSON.stringify(failedQueue));
+            } else {
+                console.log('Successfully saved to Firebase:', licenseCode);
+            }
+        });
+        
+        return true;
+    } catch (error) {
+        console.error('Exception saving to Firebase:', error);
+        return false;
+    }
+};
+
+
+// Fungsi untuk save ke Firebase di background
+OfflineLicenseSystem.prototype.saveToFirebaseInBackground = function(licenseCode, data) {
+    if (!this.initializeFirebase()) {
+        console.warn('Firebase tidak tersedia, simpan lokal saja');
+        return;
+    }
+    
+    try {
+        var firebaseData = {
+            key: licenseCode,
+            package: data.package,
+            customerName: data.customerName,
+            deviceId: data.deviceId,
+            status: data.status,
+            generatedAt: Date.now(), // Firebase timestamp
+            expiryDays: data.expiryDays,
+            created: data.created
+        };
+        
+        this.database.ref('licenses/' + licenseCode).set(firebaseData)
+            .then(function() {
+                console.log('License saved to Firebase:', licenseCode);
+            })
+            .catch(function(error) {
+                console.warn('Failed to save to Firebase:', error);
+                // Simpan ke queue untuk retry nanti
+                var failedQueue = JSON.parse(localStorage.getItem('firebase_failed_queue') || '[]');
+                failedQueue.push({
+                    code: licenseCode,
+                    data: firebaseData,
+                    timestamp: Date.now()
+                });
+                localStorage.setItem('firebase_failed_queue', JSON.stringify(failedQueue));
+            });
+    } catch (error) {
+        console.warn('Error saving to Firebase:', error);
+    }
+};
+
+
+
+// ==================== INISIALISASI ====================
+OfflineLicenseSystem.prototype.initialize = function() {
+    console.log('Sistem Lisensi Offline - Inisialisasi...');
+
+    // 1. Inisialisasi Firebase secara otomatis
+    this.initializeFirebase();
+    
+    // 2. Tambahkan styles
+    this.addStyles();
+    
+    // 3. Load license yang sudah ada
+    this.loadLicense();
+    
+    // 4. Load validLicenseKeys dari localStorage
+    this.loadValidLicenseKeys();
+    
+    // 5. Validasi license
+    var isValid = this.validateLicense();
+    
+    // 6. Tampilkan popup sesuai status
+    if (!isValid) {
+        this.showActivationPopup();
+    } else {
+        // Terapkan fitur lisensi
+        this.applyLicenseFeatures();
+        
+        // Tampilkan info lisensi singkat
+        this.showBriefLicenseInfo();
+    }
+    
+    // 7. Setup iklan jika diperlukan
+    this.setupAds();
+    
+    return isValid;
+};
+
+
+// ==================== LICENSE MANAGEMENT ====================
+OfflineLicenseSystem.prototype.loadLicense = function() {
+    try {
+        var saved = localStorage.getItem('adzan_offline_license');
+        if (saved) {
+            this.currentLicense = JSON.parse(saved);
+            console.log('Lisensi ditemukan:', this.currentLicense.package);
+        }
+    } catch (error) {
+        console.error('Error loading license:', error);
+        this.currentLicense = null;
+    }
+};
+
+OfflineLicenseSystem.prototype.saveLicense = function() {
+    try {
+        localStorage.setItem('adzan_offline_license', JSON.stringify(this.currentLicense));
+        
+        // Juga simpan di key lama untuk kompatibilitas
+        localStorage.setItem('adzanAppLicense', JSON.stringify({
+            package: this.currentLicense.package,
+            startDate: this.currentLicense.startDate,
+            endDate: this.currentLicense.expiry,
+            paymentStatus: this.currentLicense.status === 'active' ? 'paid' : 'pending'
+        }));
+        
+        return true;
+    } catch (error) {
+        console.error('Error saving license:', error);
+        return false;
+    }
+};
+
+OfflineLicenseSystem.prototype.validateLicense = function() {
+    if (!this.currentLicense) return false;
+    
+    // Cek format license
+    if (!this.currentLicense.key || !this.currentLicense.expiry) {
+        return false;
+    }
+    
+    // Cek apakah kode masih valid
+    var licenseInfo = this.validLicenseKeys[this.currentLicense.key];
+    if (!licenseInfo) {
+        console.log('License key not found in valid keys');
+        return false;
+    }
+    
+    // Cek expiry date
+    var now = new Date();
+    var expiry = new Date(this.currentLicense.expiry);
+    
+    if (now > expiry) {
+        console.log('License expired');
+        // Tampilkan popup expired
+        this.showExpiredPopup();
+        return false;
+    }
+    
+    return true;
+};
+
+OfflineLicenseSystem.prototype.checkDemoEligibility = function() {
+    var demoUsed = localStorage.getItem(this.demoUsedKey);
+    
+    if (demoUsed === 'true') {
+        return {
+            eligible: false,
+            message: 'Mode demo sudah pernah digunakan pada perangkat ini'
+        };
+    }
+    
+    if (this.currentLicense && this.currentLicense.status !== 'demo') {
+        return {
+            eligible: false,
+            message: 'Lisensi sudah aktif'
+        };
+    }
+    
+    return {
+        eligible: true,
+        message: 'Dapat menggunakan demo'
+    };
+};
+
+
+// ==================== FUNGSI BARU: KELUAR DARI LISENSI ====================
+OfflineLicenseSystem.prototype.deactivateLicense = function() {
+    if (confirm('Apakah Anda yakin ingin keluar dari lisensi saat ini? Semua data lisensi akan dihapus.')) {
+        // Hapus lisensi dari localStorage
+        localStorage.removeItem('adzan_offline_license');
+        localStorage.removeItem('adzanAppLicense');
+        
+        // Reset current license
+        this.currentLicense = null;
+        
+        // Hentikan iklan jika berjalan
+        if (this.adsTimer) {
+            clearInterval(this.adsTimer);
+            this.adsTimer = null;
+        }
+        
+        // Tampilkan toast
+        this.showToast('Lisensi berhasil dihapus. Silahkan aktivasi lisensi baru.', 'info');
+        
+        // Tampilkan popup aktivasi setelah 1 detik
+        var self = this;
+        setTimeout(function() {
+            self.showActivationPopup();
+        }, 1000);
+        
+        return true;
+    }
+    return false;
+};
+
+// ==================== FUNGSI BARU: CEK STATUS UPGRADE ====================
+OfflineLicenseSystem.prototype.checkUpgradeEligibility = function() {
+    if (!this.currentLicense) return false;
+    
+    var currentPackage = this.currentLicense.package;
+    var packagesOrder = ['trial', 'basic', 'premium', 'vip'];
+    var currentIndex = packagesOrder.indexOf(currentPackage);
+    
+    // Jika sudah VIP, tidak bisa upgrade
+    if (currentIndex >= 3) {
+        return {
+            eligible: false,
+            message: 'Anda sudah memiliki paket tertinggi (VIP)'
+        };
+    }
+    
+    // Hitung berapa hari tersisa
+    var expiryDate = new Date(this.currentLicense.expiry);
+    var now = new Date();
+    var daysLeft = Math.ceil((expiryDate - now) / (1000 * 3600 * 24));
+    
+    // Jika masa aktif kurang dari 30 hari, beri rekomendasi upgrade
+    var recommendation = '';
+    if (daysLeft < 30) {
+        recommendation = 'Masa aktif tersisa ' + daysLeft + ' hari. Disarankan untuk upgrade.';
+    }
+    
+    return {
+        eligible: true,
+        currentPackage: currentPackage,
+        nextPackage: packagesOrder[currentIndex + 1],
+        daysLeft: daysLeft,
+        recommendation: recommendation
+    };
+};
+
+// ==================== FUNGSI BARU: HITUNG HARGA UPGRADE ====================
+OfflineLicenseSystem.prototype.calculateUpgradePrice = function(targetPackage) {
+    if (!this.currentLicense) return this.licensePackages[targetPackage].price;
+    
+    var currentPackage = this.currentLicense.package;
+    var currentPrice = this.licensePackages[currentPackage].price;
+    var targetPrice = this.licensePackages[targetPackage].price;
+    
+    // Jika upgrade dari trial ke paket berbayar, harga full
+    if (currentPackage === 'trial') {
+        return targetPrice;
+    }
+    
+    // Hitung sisa nilai paket saat ini (prorata)
+    var expiryDate = new Date(this.currentLicense.expiry);
+    var startDate = new Date(this.currentLicense.startDate);
+    var now = new Date();
+    
+    var totalDays = Math.ceil((expiryDate - startDate) / (1000 * 3600 * 24));
+    var daysUsed = Math.ceil((now - startDate) / (1000 * 3600 * 24));
+    var remainingValue = currentPrice * ((totalDays - daysUsed) / totalDays);
+    
+    // Harga upgrade = harga target - nilai sisa paket saat ini
+    var upgradePrice = targetPrice - remainingValue;
+    
+    // Minimum harga upgrade
+    if (upgradePrice < (targetPrice * 0.5)) {
+        upgradePrice = targetPrice * 0.5; // Minimum 50% dari harga paket baru
+    }
+    
+    return Math.round(upgradePrice);
+};
+
+// ==================== FUNGSI BARU: GENERATE KODE LISENSI (untuk admin) ====================
+// ==================== FUNGSI BARU: PANEL ADMIN ONLINE ====================
+OfflineLicenseSystem.prototype.showAdminPanel = function(password) {
+    if (password !== 'admin123') {
+      this.showToast('Password admin salah!', 'error');
+      return;
+    }
+    
+    this.removeExistingPopup();
+    var overlay = this.createOverlay();
+    
+    // Generate license list HTML
+    var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+    var licenseListHTML = '';
+    
+    if (generatedLicenses.length > 0) {
+      licenseListHTML = '<table class="admin-table">' +
+        '<thead>' +
+          '<tr>' +
+            '<th>Kode</th>' +
+            '<th>Paket</th>' +
+            '<th>Device ID</th>' +
+            '<th>Customer</th>' +
+            '<th>Tanggal</th>' +
+            '<th>Status</th>' +
+          '</tr>' +
+        '</thead>' +
+        '<tbody>';
+      
+      for (var i = 0; i < generatedLicenses.length; i++) {
+        var license = generatedLicenses[i];
+        var isCurrentDevice = (license.deviceId === this.deviceId) ? 'current-device' : '';
+        
+        licenseListHTML += '<tr class="' + isCurrentDevice + '">' +
+          '<td><code>' + license.code + '</code></td>' +
+          '<td>' + (license.package || 'N/A') + '</td>' +
+          '<td>' + (license.deviceId || 'N/A') + '</td>' +
+          '<td>' + (license.customerName || 'N/A') + '</td>' +
+          '<td>' + new Date(license.generatedAt).toLocaleDateString('id-ID') + '</td>' +
+          '<td><span class="status-badge ' + license.status + '">' + license.status.toUpperCase() + '</span></td>' +
+        '</tr>';
+      }
+      
+      licenseListHTML += '</tbody></table>';
+    } else {
+      licenseListHTML = '<div class="empty-state">' +
+        '<i class="bi bi-inbox"></i>' +
+        '<p>Belum ada kode lisensi yang digenerate</p>' +
+      '</div>';
+    }
+    
+    overlay.innerHTML = [
+      '<div class="offline-license-popup admin">',
+      '    <div class="popup-header">',
+      '        <h2>PANEL ADMIN LISENSI ONLINE</h2>',
+      '        <p class="subtitle">Generate, Sync, dan Kelola Kode Lisensi</p>',
+      '    </div>',
+      '    ',
+      '    <div class="popup-body">',
+      '        <div class="admin-panel">',
+      '            <div class="admin-section">',
+      '                <h4><i class="bi bi-plus-circle"></i> Generate Kode Baru</h4>',
+      '                <div class="admin-form">',
+      '                    <div class="form-group">',
+      '                        <label><i class="bi bi-box"></i> Pilih Paket</label>',
+      '                        <select id="adminPackageSelect" class="admin-select">',
+      '                            <option value="trial">Uji Coba (2 hari)</option>',
+      '                            <option value="basic">Dasar (1 tahun)</option>',
+      '                            <option value="premium">Premium (1 tahun)</option>',
+      '                            <option value="vip">VIP (Seumur Hidup)</option>',
+      '                        </select>',
+      '                    </div>',
+      '                    ',
+      '                    <div class="form-group">',
+      '                        <label><i class="bi bi-laptop"></i> ID Perangkat</label>',
+      '                        <input type="text" id="adminDeviceId" class="admin-input" value="' + this.deviceId + '" readonly>',
+      '                    </div>',
+      '                    ',
+      '                    <div class="form-group">',
+      '                        <label><i class="bi bi-person"></i> Nama Customer</label>',
+      '                        <input type="text" id="adminCustomerName" class="admin-input" placeholder="Nama customer">',
+      '                    </div>',
+      '                    ',
+      '                    <button id="generateLicenseBtn" class="btn-admin-generate">',
+      '                        <i class="bi bi-magic"></i> GENERATE KODE LISENSI',
+      '                    </button>',
+      '                </div>',
+      '            </div>',
+      '            ',
+      '            <div class="admin-section">',
+      '                <h4><i class="bi bi-fire"></i> Status Firebase</h4>',
+      '                <div class="admin-form">',
+      '                    <div class="form-group">',
+      '                        <label><i class="bi bi-database"></i> Koneksi Database</label>',
+      '                        <div class="setting-value" id="firebaseStatus">' + 
+                            (this.isFirebaseInitialized ? 'TERHUBUNG' : 'OFFLINE') + 
+                        '</div>',
+      '                    </div>',
+      '                    ',
+      '                    <div class="admin-actions" style="margin-top: 15px;">',
+      '                        <button id="testFirebaseBtn" class="btn-admin-secondary">',
+      '                            <i class="bi bi-wifi"></i> Test Koneksi Firebase',
+      '                        </button>',
+      '                        <button id="syncToFirebaseBtn" class="btn-admin-generate">',
+      '                            <i class="bi bi-cloud-upload"></i> Sync ke Firebase',
+      '                        </button>',
+      '                    </div>',
+      '                </div>',
+      '            </div>',
+      '            ',
+      '            <div class="admin-section">',
+      '                <h4><i class="bi bi-list-check"></i> Kode yang Telah Digenerate</h4>',
+      '                <div class="license-list" id="licenseListContainer">',  // TAMBAHKAN ID
+            licenseListHTML,
+      '                </div>',
+      '                <div class="license-stats">',
+      '                    <span><i class="bi bi-box"></i> Total: ' + generatedLicenses.length + '</span>',
+      '                    <span><i class="bi bi-check-circle"></i> Active: ' + generatedLicenses.filter(function(l) { return l.status === 'active'; }).length + '</span>',
+      '                    <span><i class="bi bi-clock"></i> Pending: ' + generatedLicenses.filter(function(l) { return l.status === 'pending'; }).length + '</span>',
+      '                </div>',
+      '                <div class="admin-actions">',
+      '                    <button id="importFromServerBtn" class="btn-admin-secondary">',
+      '                        <i class="bi bi-cloud-download"></i> Import dari Firebase',
+      '                    </button>',
+      '                    <button id="exportLicensesBtn" class="btn-admin-secondary">',
+      '                        <i class="bi bi-download"></i> Export ke CSV',
+      '                    </button>',
+      '                    <button id="clearLicensesBtn" class="btn-admin-danger">',
+      '                        <i class="bi bi-trash"></i> Hapus Semua',
+      '                    </button>',
+      '                    <button id="refreshLicenseListBtn" class="btn-admin-secondary">',
+      '                        <i class="bi bi-arrow-clockwise"></i> Refresh List',
+      '                    </button>',
+      '                </div>',
+      '            </div>',
+      '            ',
+      '            <div class="admin-section">',
+      '                <h4><i class="bi bi-gear"></i> Pengaturan Sistem</h4>',
+      '                <div class="system-settings">',
+      '                    <div class="setting-item">',
+      '                        <label><i class="bi bi-shield-check"></i> Valid License Keys</label>',
+      '                        <div class="setting-value">' + Object.keys(this.validLicenseKeys).length + ' kode aktif</div>',
+      '                    </div>',
+      '                    ',
+      '                    <div class="setting-item">',
+      '                        <label><i class="bi bi-device-ssd"></i> Device ID Aktif</label>',
+      '                        <div class="setting-value">' + this.deviceId + '</div>',
+      '                    </div>',
+      '                    ',
+      '                    <div class="setting-item">',
+      '                        <label><i class="bi bi-clock-history"></i> Lisensi Saat Ini</label>',
+      '                        <div class="setting-value">' + (this.currentLicense ? this.currentLicense.package : 'Tidak ada') + '</div>',
+      '                    </div>',
+      '                </div>',
+      '            </div>',
+      '            ',
+      '            <button id="closeAdminPanelBtn" class="btn-admin-close">',
+      '                <i class="bi bi-x-lg"></i> TUTUP PANEL',
+      '            </button>',
+      '            <div class="admin-info">',
+      '                <p><i class="bi bi-info-circle"></i> Panel Admin - Hanya untuk penggunaan internal</p>',
+      '            </div>',
+      '        </div>',
+      '    </div>',
+      '    ',
+      '</div>'
+    ].join('');
+    
+    document.body.appendChild(overlay);
+    this.darkenBackground();
+    
+    var self = this;
+    
+    // Generate license via Firebase
+    document.getElementById('generateLicenseBtn').addEventListener('click', function() {
+        var packageType = document.getElementById('adminPackageSelect').value;
+        var deviceId = document.getElementById('adminDeviceId').value || 'N/A';
+        var customerName = document.getElementById('adminCustomerName').value || 'Anonymous';
+        
+        if (!customerName.trim()) {
+            self.showToast('Masukkan nama customer!', 'error');
+            return;
+        }
+        
+        // Generate langsung di Firebase
+        var licenseCode = self.generateLicenseOnFirebase({
+            package: packageType,
+            deviceId: deviceId,
+            customerName: customerName
+        });
+        
+        if (licenseCode) {
+            // Tampilkan popup hasil
+            self.showLicenseResultPopup(licenseCode, packageType, customerName, deviceId);
+        } else {
+            self.showToast('Gagal generate lisensi di Firebase', 'error');
+        }
+    });
+    
+    // Test Firebase connection
+    document.getElementById('testFirebaseBtn').addEventListener('click', function() {
+        if (self.initializeFirebase()) {
+            self.showToast('Firebase terhubung!', 'success');
+            document.getElementById('firebaseStatus').textContent = 'TERHUBUNG';
+            document.getElementById('firebaseStatus').style.color = '#28a745';
+        } else {
+            self.showToast('Gagal terhubung ke Firebase', 'error');
+            document.getElementById('firebaseStatus').textContent = 'OFFLINE';
+            document.getElementById('firebaseStatus').style.color = '#dc3545';
+        }
+    });
+    
+    // Sync to Firebase
+    document.getElementById('syncToFirebaseBtn').addEventListener('click', function() {
+        var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+        
+        if (generatedLicenses.length === 0) {
+            self.showToast('Tidak ada data lisensi untuk disync', 'warning');
+            return;
+        }
+        
+        var successCount = 0;
+        var errorCount = 0;
+        
+        generatedLicenses.forEach(function(license) {
+            if (self.saveLicenseToFirebase(license)) {
+                successCount++;
+            } else {
+                errorCount++;
+            }
+        });
+        
+        self.showToast('Sync selesai: ' + successCount + ' berhasil, ' + errorCount + ' gagal', 
+                    errorCount === 0 ? 'success' : 'warning');
+    });
+
+    // Refresh license list
+    document.getElementById('refreshLicenseListBtn').addEventListener('click', function() {
+        // Refresh data dari localStorage
+        var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+        
+        if (generatedLicenses.length === 0) {
+            document.getElementById('licenseListContainer').innerHTML = 
+                '<div class="empty-state">' +
+                '    <i class="bi bi-inbox"></i>' +
+                '    <p>Belum ada kode lisensi yang digenerate</p>' +
+                '</div>';
+            return;
+        }
+        
+        var licenseListHTML = '<table class="admin-table">' +
+            '<thead>' +
+            '<tr>' +
+                '<th>Kode</th>' +
+                '<th>Paket</th>' +
+                '<th>Device ID</th>' +
+                '<th>Customer</th>' +
+                '<th>Tanggal</th>' +
+                '<th>Status</th>' +
+            '</tr>' +
+            '</thead>' +
+            '<tbody>';
+        
+        for (var i = 0; i < generatedLicenses.length; i++) {
+            var license = generatedLicenses[i];
+            var isCurrentDevice = (license.deviceId === self.deviceId) ? 'current-device' : '';
+            
+            licenseListHTML += '<tr class="' + isCurrentDevice + '">' +
+            '<td><code>' + license.code + '</code></td>' +
+            '<td>' + (license.package || 'N/A') + '</td>' +
+            '<td>' + (license.deviceId || 'N/A') + '</td>' +
+            '<td>' + (license.customerName || 'N/A') + '</td>' +
+            '<td>' + new Date(license.generatedAt).toLocaleDateString('id-ID') + '</td>' +
+            '<td><span class="status-badge ' + license.status + '">' + license.status.toUpperCase() + '</span></td>' +
+            '</tr>';
+        }
+        
+        licenseListHTML += '</tbody></table>';
+        
+        document.getElementById('licenseListContainer').innerHTML = licenseListHTML;
+        self.showToast('License list refreshed', 'success');
+    });
+    
+    // Import from Firebase
+    // Di event listener importFromServerBtn:
+    // Import from Firebase (sesuai struktur data Anda)
+    document.getElementById('importFromServerBtn').addEventListener('click', function() {
+        console.log('=== START FIREBASE IMPORT ===');
+        self.showToast('Mengimport data dari Firebase...', 'info');
+        
+        self.getAllLicensesFromFirebase(function(data, error) {
+            console.log('Import callback - data:', data ? 'exists' : 'null', 'error:', error);
+            
+            if (error) {
+                console.error('Import error:', error);
+                self.showToast('Import gagal: ' + error, 'error');
+                return;
+            }
+            
+            if (!data || Object.keys(data).length === 0) {
+                console.log('No data from Firebase');
+                self.showToast('Tidak ada data di Firebase', 'warning');
+                return;
+            }
+            
+            console.log('Processing', Object.keys(data).length, 'licenses from Firebase');
+            
+            // Process each license
+            var importedLicenses = [];
+            var updatedValidKeys = 0;
+            
+            Object.keys(data).forEach(function(licenseId) {
+                var item = data[licenseId];
+                console.log('Processing license ID:', licenseId, 'Data:', item);
+                
+                // Format untuk localStorage
+                var formattedLicense = {
+                    code: item.licenseKey || licenseId,  // Perhatikan: licenseKey bukan key
+                    package: item.package || 'basic',
+                    customerName: item.customerName || 'Anonymous',
+                    deviceId: item.deviceId || 'N/A',
+                    generatedAt: item.generatedAt || new Date().toISOString(),
+                    created: item.createdDate || new Date().toISOString().split('T')[0],
+                    status: item.status || 'pending',
+                    expiryDays: item.expiryDays || 365,
+                    price: item.price || 0,
+                    expiryDate: item.expiryDate,
+                    lastUpdated: item.lastUpdated
+                };
+                
+                importedLicenses.push(formattedLicense);
+                
+                // Update validLicenseKeys
+                if (item.status === 'active' || item.status === 'pending') {
+                    self.validLicenseKeys[formattedLicense.code] = {
+                        package: item.package,
+                        expiryDays: item.package === 'vip' ? 9999 : (item.package === 'trial' ? 2 : 365),
+                        created: item.createdDate || new Date().toISOString().split('T')[0]
+                    };
+                    updatedValidKeys++;
+                }
+            });
+            
+            console.log('Imported licenses:', importedLicenses);
+            console.log('Updated validLicenseKeys:', updatedValidKeys);
+            
+            // Save to localStorage
+            localStorage.setItem('generated_licenses', JSON.stringify(importedLicenses));
+            self.saveValidLicenseKeys();
+            
+            // Show success message
+            self.showToast('Berhasil import ' + importedLicenses.length + ' lisensi dari Firebase!', 'success');
+            
+            // Log untuk debug
+            var savedData = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+            console.log('Saved to localStorage:', savedData.length, 'items');
+            if (savedData.length > 0) {
+                console.log('First saved item:', savedData[0]);
+            }
+            
+            // Refresh admin panel setelah 1 detik
+            setTimeout(function() {
+                console.log('Refreshing admin panel...');
+                self.showAdminPanel('admin123');
+            }, 1000);
+            
+        });
+        
+        console.log('=== END FIREBASE IMPORT ===');
+    });
+    // Fungsi bantuan untuk load dari localStorage
+    OfflineLicenseSystem.prototype.loadFromLocalStorage = function() {
+        var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+        
+        if (generatedLicenses.length === 0) {
+            this.showToast('Tidak ada data lisensi di localStorage', 'warning');
+            return;
+        }
+        
+        // Update validLicenseKeys dari lokal
+        var updatedCount = 0;
+        for (var i = 0; i < generatedLicenses.length; i++) {
+            var license = generatedLicenses[i];
+            if (license.status === 'active' || license.status === 'pending') {
+                this.validLicenseKeys[license.code] = {
+                    package: license.package,
+                    expiryDays: license.expiryDays || 365,
+                    created: license.created || new Date().toISOString().split('T')[0]
+                };
+                updatedCount++;
+            }
+        }
+        
+        this.saveValidLicenseKeys();
+        
+        this.showToast('Loaded ' + generatedLicenses.length + ' licenses from localStorage', 'success');
+        
+        // Refresh admin panel
+        var self = this;
+        setTimeout(function() {
+            self.showAdminPanel('admin123');
+        }, 1000);
+    };
+    
+    // Event listener untuk export
+    document.getElementById('exportLicensesBtn').addEventListener('click', function() {
+        self.exportLicensesToCSV();
+    });
+    
+    // Event listener untuk clear
+    document.getElementById('clearLicensesBtn').addEventListener('click', function() {
+        if (confirm('Hapus semua data lisensi yang telah digenerate?')) {
+            localStorage.removeItem('generated_licenses');
+            self.showToast('Data lisensi berhasil dihapus', 'success');
+            setTimeout(function() {
+                self.showAdminPanel('admin123'); // Refresh panel
+            }, 1000);
+        }
+    });
+    
+    // Event listener untuk close
+    document.getElementById('closeAdminPanelBtn').addEventListener('click', function() {
+        self.switchPopup(self.showActivationPopup);
+    });
+    
+    // Adjust height setelah render
+    setTimeout(function() {
+        self.adjustPopupHeight();
+    }, 100);
+};
+
+// ==================== FUNGSI BARU: SHOW LICENSE RESULT POPUP ====================
+OfflineLicenseSystem.prototype.showLicenseResultPopup = function(licenseCode, packageType, customerName, deviceId) {
+    this.removeExistingPopup();
+    
+    var overlay = this.createOverlay();
+    var packageData = this.licensePackages[packageType];
+    
+    overlay.innerHTML = [
+      '<div class="offline-license-popup">',
+      '    <div class="popup-header">',
+      '        <button class="close-popup-btn" id="closeResultPopupBtn">',
+      '            <i class="bi bi-x-lg"></i>',
+      '        </button>',
+      '        <h2>KODE LISENSI BERHASIL DIGENERATE</h2>',
+      '        <p class="subtitle">' + packageData.name + ' - ' + customerName + '</p>',
+      '    </div>',
+      '    ',
+      '    <div class="popup-body">',
+      '        <div class="license-result-popup">',
+      '            <div class="result-icon">',
+      '                <i class="bi bi-check-circle"></i>',
+      '            </div>',
+      '            ',
+      '            <div class="result-details">',
+      '                <div class="result-item">',
+      '                    <label>Kode Lisensi:</label>',
+      '                    <div class="result-value license-code">' + licenseCode + '</div>',
+      '                </div>',
+      '                ',
+      '                <div class="result-item">',
+      '                    <label>Paket:</label>',
+      '                    <div class="result-value">' + packageData.name + '</div>',
+      '                </div>',
+      '                ',
+      '                <div class="result-item">',
+      '                    <label>Customer:</label>',
+      '                    <div class="result-value">' + customerName + '</div>',
+      '                </div>',
+      '                ',
+      '                <div class="result-item">',
+      '                    <label>Device ID:</label>',
+      '                    <div class="result-value">' + deviceId + '</div>',
+      '                </div>',
+      '                ',
+      '                <div class="result-item">',
+      '                    <label>Status:</label>',
+      '                    <div class="result-value"><span class="status-badge pending">PENDING</span></div>',
+      '                </div>',
+      '                ',
+      '                <div class="result-item">',
+      '                    <label>Disimpan di:</label>',
+      '                    <div class="result-value">LocalStorage & Firebase</div>',
+      '                </div>',
+      '            </div>',
+      '            ',
+      '            <div class="result-actions">',
+      '                <button onclick="copyToClipboard(\'' + licenseCode + '\')" class="btn-copy-admin">',
+      '                    <i class="bi bi-copy"></i> Salin Kode',
+      '                </button>',
+      '                <button onclick="window.open(\'https://wa.me/6289609745090?text=Kode%20Lisensi:%20' + encodeURIComponent(licenseCode) + '%0APaket:%20' + encodeURIComponent(packageData.name) + '%0ACustomer:%20' + encodeURIComponent(customerName) + '\', \'_blank\')" class="btn-whatsapp-admin">',
+      '                    <i class="bi bi-whatsapp"></i> Kirim via WhatsApp',
+      '                </button>',
+      '                <button id="backToAdminBtn" class="btn-admin-secondary">',
+      '                    <i class="bi bi-arrow-left"></i> Kembali ke Admin Panel',
+      '                </button>',
+      '            </div>',
+      '            ',
+      '            <div class="result-note">',
+      '                <p><i class="bi bi-info-circle"></i> Kode ini telah tersimpan di database lokal dan Firebase.</p>',
+      '                <p>Kode dapat digunakan langsung untuk aktivasi.</p>',
+      '            </div>',
+      '        </div>',
+      '    </div>',
+      '    ',
+      '</div>'
+    ].join('');
+    
+    document.body.appendChild(overlay);
+    this.darkenBackground();
+    
+    var self = this;
+    
+    // Event listener untuk tombol close
+    document.getElementById('closeResultPopupBtn').addEventListener('click', function() {
+        self.removePopup(overlay);
+        self.showAdminPanel('admin123'); // Kembali ke admin panel
+    });
+    
+    // Event listener untuk tombol back to admin
+    document.getElementById('backToAdminBtn').addEventListener('click', function() {
+        self.removePopup(overlay);
+        self.showAdminPanel('admin123'); // Kembali ke admin panel
+    });
+};
+
+OfflineLicenseSystem.prototype.switchPopup = function(nextPopupFn) {
+    this.removeExistingPopup();
+    var self = this;
+    setTimeout(function() {
+        nextPopupFn.call(self);
+    }, 50);
+};
+
+
+// ==================== FUNGSI BARU: EXPORT KE CSV ====================
+OfflineLicenseSystem.prototype.exportLicensesToCSV = function() {
+    var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+    
+    if (generatedLicenses.length === 0) {
+        this.showToast('Tidak ada data untuk diexport', 'warning');
+        return;
+    }
+    
+    // Buat header CSV
+    var csv = 'Kode,Paket,Device ID,Customer Name,Generated At,Status\n';
+    
+    // Tambahkan data
+    generatedLicenses.forEach(function(license) {
+        csv += [
+            license.code,
+            license.package,
+            license.deviceId || 'N/A',
+            license.customerName || 'Anonymous',
+            new Date(license.generatedAt).toLocaleDateString('id-ID'),
+            license.status
+        ].join(',') + '\n';
+    });
+    
+    // Buat blob dan download
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var url = window.URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'license_data_' + new Date().toISOString().split('T')[0] + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    this.showToast('Data berhasil diexport ke CSV', 'success');
+};
+
+// TAMBAHKAN FUNGSI INI SEBELUM applyLicenseFeatures:
+OfflineLicenseSystem.prototype.setupLeftCarouselForLicense = function(hiddenSlides) {
+    // Simpan hidden slides ke localStorage
+    localStorage.setItem('license_hidden_slides', JSON.stringify(hiddenSlides || []));
+    
+    // Panggil fungsi loadLeftCarousel jika ada
+    if (typeof window.loadLeftCarousel === 'function') {
+        setTimeout(function() {
+            window.loadLeftCarousel();
+        }, 100);
+    }
+};
+
+// ==================== APPLY LICENSE FEATURES ====================
+OfflineLicenseSystem.prototype.applyLicenseFeatures = function() {
+    if (!this.currentLicense) {
+        console.log('Tidak ada lisensi aktif');
+        return;
+    }
+    
+    var packageData = this.licensePackages[this.currentLicense.package];
+    if (!packageData) {
+        console.log('Paket tidak ditemukan:', this.currentLicense.package);
+        return;
+    }
+    
+    var features = packageData.features;
+    console.log('Menerapkan fitur untuk paket:', this.currentLicense.package);
+    
+    // 1. Hidden logo jika diperlukan
+    if (features.hiddenLogo) {
+        this.hideElement('#masjidLogo');
+    }
+    
+    // 2. Hidden slide tertentu
+    this.setupLeftCarouselForLicense(features.hiddenSlides);
+
+    
+    // 3. Hidden tombol ON/OFF
+    if (features.hiddenPowerButton) {
+        this.hideElement('#screenOffBtn');
+    }
+    
+    // 4. Hidden nama desa dari alamat
+    if (features.hiddenVillageName) {
+        this.modifyAddress();
+    }
+    
+    // 5. Batasi jumlah gambar
+    this.limitImages(features.maxImages);
+    
+    // 6. Hidden card Imsak dan Syuruq
+    if (features.hiddenImsakSyuruq) {
+        this.hideElement('#timeImsak');
+        this.hideElement('#timeSyuruq');
+        this.hideElement('#thSyuruq');
+        
+        // TAMBAHKAN INI UNTUK HIDE HEADER IMSAK JUGA:
+        var thImsak = document.getElementById('thImsak');
+        if (thImsak) {
+            thImsak.style.display = 'none';
+        }
+    }
+    
+    // 7. Teks Maghrib & Isya aktif hanya 15 menit pertama (untuk trial)
+    if (features.maghribIsyaActiveMinutes > 0) {
+        this.handleMaghribIsyaTimer(features.maghribIsyaActiveMinutes);
+    }
+    
+    // 8. Hidden tombol pengaturan
+    for (var j = 0; j < features.hiddenSettingsButtons.length; j++) {
+        var buttonType = features.hiddenSettingsButtons[j];
+        this.hideSettingsButton(buttonType);
+    }
+    
+    // 9. Hidden tombol atur waktu adzan
+    for (var k = 0; k < features.hiddenAdzanButtons.length; k++) {
+        var adzanButtonType = features.hiddenAdzanButtons[k];
+        this.hideAdzanButton(adzanButtonType);
+    }
+    
+    // 10. Hidden audio
+    for (var l = 0; l < features.hiddenAudio.length; l++) {
+        var audioType = features.hiddenAudio[l];
+        this.disableAudio(audioType);
+    }
+    
+    // Update UI dengan info lisensi
+    this.updateLicenseUI();
+};
+
+// ==================== HELPER FUNCTIONS FOR FEATURES ====================
+OfflineLicenseSystem.prototype.hideElement = function(selector) {
+    var element = document.querySelector(selector);
+    if (element) {
+        element.style.display = 'none';
+    }
+};
+
+OfflineLicenseSystem.prototype.modifyAddress = function() {
+    var addressElement = document.getElementById('masjidAddress');
+    if (addressElement) {
+        var address = addressElement.textContent;
+        var modifiedAddress = address.replace(/Desa\s+\w+,?\s*/i, '');
+        addressElement.textContent = modifiedAddress || 'Masjid Al-Muthmainnah';
+    }
+};
+
+OfflineLicenseSystem.prototype.limitImages = function(maxImages) {
+    if (typeof settings !== 'undefined' && settings.uploadedImages) {
+        if (settings.uploadedImages.length > maxImages) {
+            settings.uploadedImages = settings.uploadedImages.slice(0, maxImages);
+            if (typeof saveSettings === 'function') {
+                saveSettings();
+            }
+        }
+        
+        if (typeof loadMainCarousel === 'function') {
+            loadMainCarousel();
+        }
+    }
+};
+
+// GANTI FUNGSI handleMaghribIsyaTimer MENJADI INI:
+OfflineLicenseSystem.prototype.handleMaghribIsyaTimer = function(minutes) {
+    var firstOpenKey = 'firstOpenTime';
+    var firstOpenTime = localStorage.getItem(firstOpenKey);
+    
+    if (!firstOpenTime) {
+        firstOpenTime = new Date().getTime();
+        localStorage.setItem(firstOpenKey, firstOpenTime);
+    }
+    
+    var now = new Date().getTime();
+    var timeDiff = now - parseInt(firstOpenTime);
+    var minutesDiff = timeDiff / (1000 * 60);
+    
+    if (minutesDiff > minutes) {
+        // GANTI TEKS HEADER MENJADI "-----" BUKAN HIDE ELEMENT
+        var headerRow = document.getElementById('jadwalHeader');
+        if (headerRow) {
+            var headers = headerRow.getElementsByTagName('th');
+            for (var i = 0; i < headers.length; i++) {
+                var headerText = headers[i].textContent.trim();
+                if (headerText === 'Maghrib' || headerText === 'Isya') {
+                    headers[i].textContent = '-----';
+                }
+            }
+        }
+        
+        // JANGAN hideElement, tapi biarkan waktu tetap tampil
+        // Hanya header yang diganti
+    }
+};
+
+OfflineLicenseSystem.prototype.hideSettingsButton = function(buttonType) {
+    var selector = '';
+    
+    switch(buttonType) {
+        case 'data-masjid':
+            selector = 'button[data-bs-target="#offcanvasDataMasjid"]';
+            break;
+        case 'running-text':
+            selector = 'button[data-bs-target="#offcanvasRunningText"]';
+            break;
+        case 'slider-duration':
+            selector = 'button[onclick="showSliderSettingsForm()"]';
+            break;
+    }
+    
+    if (selector) {
+        this.hideElement(selector);
+    }
+};
+
+OfflineLicenseSystem.prototype.hideAdzanButton = function(buttonType) {
+    var self = this;
+    setTimeout(function() {
+        var modal = document.getElementById('prayerSettingsModal');
+        if (modal) {
+            var buttonSelector = '';
+            
+            if (buttonType === 'countdown-adzan') {
+                buttonSelector = 'button[onclick*="adzan"]';
+            } else if (buttonType === 'countdown-iqamah') {
+                buttonSelector = 'button[onclick*="iqamah"]';
+            } else if (buttonType === 'overlay-duration') {
+                buttonSelector = 'button[onclick*="overlay"]';
+            }
+            
+            if (buttonSelector) {
+                var buttons = modal.querySelectorAll(buttonSelector);
+                for (var i = 0; i < buttons.length; i++) {
+                    buttons[i].style.display = 'none';
+                }
+            }
+        }
+    }, 1000);
+};
+
+OfflineLicenseSystem.prototype.disableAudio = function(audioType) {
+    var audioId = '';
+    
+    switch(audioType) {
+        case 'shalawat':
+            audioId = 'audioShalawat';
+            break;
+        case 'adzan':
+            audioId = 'audioAdzan';
+            break;
+    }
+    
+    if (audioId) {
+        var audioElement = document.getElementById(audioId);
+        if (audioElement) {
+            audioElement.src = '';
+            audioElement.removeAttribute('src');
+        }
+    }
+};
+
+// ==================== ADS MANAGEMENT ====================
+OfflineLicenseSystem.prototype.setupAds = function() {
+    if (!this.currentLicense) return;
+    
+    var packageData = this.licensePackages[this.currentLicense.package];
+    if (!packageData.features.ads.enabled) return;
+    
+    var adsConfig = packageData.features.ads;
+    var self = this;
+    
+    this.adsTimer = setInterval(function() {
+        self.showAd(adsConfig);
+    }, adsConfig.interval * 60 * 1000);
+    
+    setTimeout(function() {
+        self.showAd(adsConfig);
+    }, 10000);
+};
+
+OfflineLicenseSystem.prototype.showAd = function(adsConfig) {
+    var blackOverlay = document.getElementById('blackOverlay');
+    var screenBlack = document.getElementById('screenblack');
+    
+    if ((blackOverlay && blackOverlay.style.display === 'block') || 
+        (screenBlack && screenBlack.style.display === 'block')) {
+        
+        if (adsConfig.overlayBehavior === 'behind') {
+            console.log('Iklan berjalan di belakang overlay');
+            return;
+        }
+    }
+    
+    if (this.isShowingAds) return;
+    
+    this.isShowingAds = true;
+    
+    var randomAd = this.adImages[Math.floor(Math.random() * this.adImages.length)];
+    
+    var adOverlay = document.createElement('div');
+    adOverlay.id = 'adOverlay';
+    adOverlay.style.position = 'fixed';
+    adOverlay.style.top = '0';
+    adOverlay.style.left = '0';
+    adOverlay.style.width = '100%';
+    adOverlay.style.height = '100%';
+    adOverlay.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+    adOverlay.style.zIndex = '99990';
+    adOverlay.style.display = 'flex';
+    adOverlay.style.alignItems = 'center';
+    adOverlay.style.justifyContent = 'center';
+    adOverlay.style.flexDirection = 'column';
+    
+    adOverlay.innerHTML = [
+        '<div style="max-width: 90%; max-height: 90%;">',
+        '    <img src="' + randomAd + '" alt="Iklan" style="width: 100%; height: auto; border-radius: 10px;">',
+        '</div>',
+        '<div id="adCountdown" style="color: white; font-size: 24px; margin-top: 20px; font-weight: bold;">',
+        '    ' + adsConfig.duration,
+        '</div>'
+    ].join('');
+    
+    document.body.appendChild(adOverlay);
+    
+    var countdown = adsConfig.duration;
+    var countdownElement = document.getElementById('adCountdown');
+    var self = this;
+    
+    var countdownInterval = setInterval(function() {
+        countdown--;
+        if (countdownElement) {
+            countdownElement.textContent = countdown;
+        }
+        
+        if (countdown <= 0) {
+            clearInterval(countdownInterval);
+            self.removeAd(adOverlay);
+        }
+    }, 1000);
+    
+    adOverlay.addEventListener('click', function() {
+        clearInterval(countdownInterval);
+        self.removeAd(adOverlay);
+    });
+};
+
+OfflineLicenseSystem.prototype.removeAd = function(adOverlay) {
+    if (adOverlay && adOverlay.parentNode) {
+        adOverlay.parentNode.removeChild(adOverlay);
+    }
+    this.isShowingAds = false;
+};
+
+OfflineLicenseSystem.prototype.findGeneratedLicense = function(code) {
+    var list = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+    for (var i = 0; i < list.length; i++) {
+        if (list[i].code === code) {
+            return list[i];
+        }
+    }
+    return null;
+};
+
+
+// ==================== ACTIVATION FUNCTIONS ====================
+OfflineLicenseSystem.prototype.activateLicense = function(licenseKey) {
+    licenseKey = licenseKey.toUpperCase().trim();
+
+    if (!this.isValidLicenseFormat(licenseKey)) {
+        return {
+            success: false,
+            message: 'Format kode lisensi tidak valid'
+        };
+    }
+
+    // 1. Cek di Firebase terlebih dahulu
+    var self = this;
+    var firebaseCheck = false;
+    
+    // Gunakan promise-like pattern untuk async
+    this.validateLicenseWithFirebase(licenseKey, function(firebaseData) {
+        if (firebaseData) {
+            firebaseCheck = true;
+            // Update status di Firebase
+            self.updateLicenseInFirebase(licenseKey, {
+                status: 'active',
+                activatedAt: firebase.database.ServerValue.TIMESTAMP,
+                activatedDevice: self.deviceId
+            });
+        }
+    });
+
+    // 2. Cek di lokal (sebagai fallback)
+    var licenseInfo = this.validLicenseKeys[licenseKey];
+    
+    if (!licenseInfo && !firebaseCheck) {
+        return {
+            success: false,
+            message: 'Kode lisensi tidak ditemukan'
+        };
+    }
+
+    // 3. Hitung expiry
+    var packageType = licenseInfo ? licenseInfo.package : 'basic'; // default jika dari Firebase
+    var pkg = this.licensePackages[packageType];
+    var startDate = new Date();
+    var expiryDate = new Date();
+
+    if (packageType === 'vip') {
+        expiryDate.setFullYear(expiryDate.getFullYear() + 100);
+    } else if (packageType === 'trial') {
+        expiryDate.setDate(expiryDate.getDate() + 2);
+    } else {
+        expiryDate.setDate(expiryDate.getDate() + 365);
+    }
+
+    // 4. Simpan lisensi aktif
+    this.currentLicense = {
+        key: licenseKey,
+        package: packageType,
+        startDate: startDate.toISOString(),
+        expiry: expiryDate.toISOString(),
+        deviceId: this.deviceId,
+        activatedAt: new Date().toISOString(),
+        status: 'active'
+    };
+
+    this.saveLicense();
+
+    // 5. Simpan ke Firebase
+    this.saveLicenseToFirebase(this.currentLicense);
+
+    return {
+        success: true,
+        data: {
+            package: packageType,
+            expiry: expiryDate.toISOString()
+        }
+    };
+};
+
+
+OfflineLicenseSystem.prototype.isValidLicenseFormat = function(key) {
+    var pattern = /^RH-MTV-[A-Z0-9]{6}$/;
+    return pattern.test(key);
+};
