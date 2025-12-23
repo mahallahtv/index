@@ -1290,7 +1290,7 @@ OfflineLicenseSystem.prototype.modifyAddress = function() {
     if (addressElement) {
         var address = addressElement.textContent;
         var modifiedAddress = address.replace(/Desa\s+\w+,?\s*/i, '');
-        addressElement.textContent = modifiedAddress || 'Masjid Al-Muthmainnah';
+        addressElement.textContent = modifiedAddress || 'Dev: Rocky CHK';
     }
 };
 
@@ -2660,7 +2660,7 @@ OfflineLicenseSystem.prototype.restoreAddress = function() {
   var addressElement = document.getElementById('masjidAddress');
   if (addressElement) {
       // Kembalikan alamat asli atau default
-      addressElement.textContent = addressElement.getAttribute('data-original-address') || 'Masjid Al-Muthmainnah';
+      addressElement.textContent = addressElement.getAttribute('data-original-address') || 'Dev: Rocky CHK';
   }
 };
 
@@ -6416,3 +6416,4 @@ if (typeof window !== 'undefined') {
   window.copyToClipboard = copyToClipboard;
   window.showGlobalToast = showGlobalToast;
 }
+
