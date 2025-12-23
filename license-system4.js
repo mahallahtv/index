@@ -1519,9 +1519,41 @@ OfflineLicenseSystem.prototype.activateLicense = function(licenseKey) {
             message: 'Format kode lisensi tidak valid'
         };
     }
+    
+    // Cek status lisensi terlebih dahulu
+    var self = this;
+    var statusCheckResult = null;
+    
+    // Gunakan synchronous check
+    var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+    for (var i = 0; i < generatedLicenses.length; i++) {
+        if (generatedLicenses[i].code === licenseKey) {
+            var license = generatedLicenses[i];
+            
+            // Cek jika sudah aktif di perangkat lain
+            if (license.status === 'active' && license.deviceId !== this.deviceId) {
+                return {
+                    success: false,
+                    message: 'Kode lisensi sudah aktif di perangkat lain'
+                };
+            }
+            
+            // Cek jika sudah expired
+            if (license.expiryDate) {
+                var expiryDate = new Date(license.expiryDate);
+                var now = new Date();
+                if (now > expiryDate) {
+                    return {
+                        success: false,
+                        message: 'Kode lisensi telah kadaluarsa'
+                    };
+                }
+            }
+            break;
+        }
+    }
 
     // 1. Cek di Firebase terlebih dahulu
-    var self = this;
     var firebaseCheck = false;
     var firebaseData = null;
     
@@ -1530,6 +1562,28 @@ OfflineLicenseSystem.prototype.activateLicense = function(licenseKey) {
         if (data) {
             firebaseCheck = true;
             firebaseData = data;
+            
+            // Cek status dari Firebase
+            if (data.status === 'active' && data.deviceId !== self.deviceId && data.activatedDevice !== self.deviceId) {
+                self.showToast('Kode lisensi sudah aktif di perangkat lain', 'error');
+                return {
+                    success: false,
+                    message: 'Kode lisensi sudah aktif di perangkat lain'
+                };
+            }
+            
+            // Cek jika expired
+            if (data.expiryDate) {
+                var expiryDate = new Date(data.expiryDate);
+                var now = new Date();
+                if (now > expiryDate) {
+                    self.showToast('Kode lisensi telah kadaluarsa', 'error');
+                    return {
+                        success: false,
+                        message: 'Kode lisensi telah kadaluarsa'
+                    };
+                }
+            }
         }
     });
 
@@ -1590,6 +1644,16 @@ OfflineLicenseSystem.prototype.activateLicense = function(licenseKey) {
             activatedDevice: this.deviceId
         });
     }
+    
+    // 8. Update status di lokal
+    for (var j = 0; j < generatedLicenses.length; j++) {
+        if (generatedLicenses[j].code === licenseKey) {
+            generatedLicenses[j].status = 'active';
+            generatedLicenses[j].deviceId = this.deviceId;
+            localStorage.setItem('generated_licenses', JSON.stringify(generatedLicenses));
+            break;
+        }
+    }
 
     return {
         success: true,
@@ -1603,6 +1667,64 @@ OfflineLicenseSystem.prototype.activateLicense = function(licenseKey) {
 OfflineLicenseSystem.prototype.isValidLicenseFormat = function(key) {
     var pattern = /^RH-MTV-[A-Z0-9]{6}$/;
     return pattern.test(key);
+};
+
+// ==================== FUNGSI BARU: CEK STATUS LISENSI ====================
+OfflineLicenseSystem.prototype.checkLicenseStatus = function(licenseKey, callback) {
+    // Cek di data lokal terlebih dahulu
+    var generatedLicenses = JSON.parse(localStorage.getItem('generated_licenses') || '[]');
+    
+    for (var i = 0; i < generatedLicenses.length; i++) {
+        if (generatedLicenses[i].code === licenseKey) {
+            var license = generatedLicenses[i];
+            var isExpired = false;
+            
+            // Cek apakah sudah kadaluarsa
+            if (license.expiryDate) {
+                var expiryDate = new Date(license.expiryDate);
+                var now = new Date();
+                if (now > expiryDate) {
+                    isExpired = true;
+                }
+            }
+            
+            if (callback) callback({
+                status: license.status || 'pending',
+                deviceId: license.deviceId,
+                expiryDate: license.expiryDate,
+                isExpired: isExpired,
+                package: license.package
+            });
+            return;
+        }
+    }
+    
+    // Cek di Firebase jika tidak ditemukan di lokal
+    var self = this;
+    this.validateLicenseWithFirebase(licenseKey, function(firebaseData) {
+        if (firebaseData) {
+            var isExpired = false;
+            
+            // Cek apakah sudah kadaluarsa
+            if (firebaseData.expiryDate) {
+                var expiryDate = new Date(firebaseData.expiryDate);
+                var now = new Date();
+                if (now > expiryDate) {
+                    isExpired = true;
+                }
+            }
+            
+            if (callback) callback({
+                status: firebaseData.status || 'pending',
+                deviceId: firebaseData.deviceId || firebaseData.activatedDevice,
+                expiryDate: firebaseData.expiryDate,
+                isExpired: isExpired,
+                package: firebaseData.package
+            });
+        } else {
+            if (callback) callback(null);
+        }
+    });
 };
 
 // ==================== POPUP SYSTEM (DIPERBAIKI) ====================
@@ -2452,7 +2574,7 @@ OfflineLicenseSystem.prototype.setupRealTimeValidation = function(licenseInput, 
         validIcon.classList.add('disabled');
         invalidIcon.classList.add('disabled');
         
-        // Juga trigger update package preview
+        // Trigger update package preview
         if (typeof self.updatePackagePreview === 'function') {
             self.updatePackagePreview(key);
         }
@@ -2469,18 +2591,32 @@ OfflineLicenseSystem.prototype.setupRealTimeValidation = function(licenseInput, 
             return;
         }
         
-        // Cek apakah kode valid
-        var licenseInfo = self.validLicenseKeys[key];
-        
-        if (licenseInfo) {
-            validIcon.classList.remove('disabled');
-            validIcon.classList.add('active');
-            invalidIcon.classList.remove('active');
-        } else {
-            invalidIcon.classList.remove('disabled');
-            invalidIcon.classList.add('active');
-            validIcon.classList.remove('active');
-        }
+        // Cek status lisensi
+        self.checkLicenseStatus(key, function(statusData) {
+            if (statusData) {
+                // Cek jika kode sudah aktif di perangkat lain atau expired
+                if ((statusData.status === 'active' && statusData.deviceId !== self.deviceId) || 
+                    statusData.status === 'expired' || statusData.isExpired) {
+                    invalidIcon.classList.remove('disabled');
+                    invalidIcon.classList.add('active');
+                    validIcon.classList.remove('active');
+                    return;
+                }
+            }
+            
+            // Cek apakah kode valid
+            var licenseInfo = self.validLicenseKeys[key];
+            
+            if (licenseInfo) {
+                validIcon.classList.remove('disabled');
+                validIcon.classList.add('active');
+                invalidIcon.classList.remove('active');
+            } else {
+                invalidIcon.classList.remove('disabled');
+                invalidIcon.classList.add('active');
+                validIcon.classList.remove('active');
+            }
+        });
     });
     
     // Juga cek saat ini
@@ -2491,63 +2627,184 @@ OfflineLicenseSystem.prototype.setupRealTimeValidation = function(licenseInput, 
 
 // ==================== FUNGSI BARU: UPDATE PACKAGE PREVIEW ====================
 OfflineLicenseSystem.prototype.updatePackagePreview = function(key) {
-  var packagePreview = document.getElementById('packagePreview');
-  if (!packagePreview) return;
-  
-  if (!key) {
-      packagePreview.innerHTML = [
-          '<div class="preview-placeholder">',
-          '    <i class="bi bi-box"></i>',
-          '    <p>Paket akan terdeteksi otomatis</p>',
-          '</div>'
-      ].join('');
-      return;
-  }
-  
-  var licenseInfo = this.validLicenseKeys[key];
-  
-  if (licenseInfo) {
-      var packageData = this.licensePackages[licenseInfo.package];
-      
-      packagePreview.innerHTML = [
-          '<div class="package-detected ' + licenseInfo.package + '">',
-          '    <div class="package-icon">',
-          '        <i class="bi bi-shield-check"></i>',
-          '    </div>',
-          '    <div class="package-info">',
-          '        <h4>' + packageData.name + '</h4>',
-          '        <p>' + licenseInfo.expiryDays + ' hari aktif</p>',
-          '        <div class="package-features">',
-          '            <span><i class="bi bi-images"></i> ' + packageData.features.maxImages + ' gambar</span>',
-          '            <span><i class="bi ' + (packageData.features.hiddenAudio.length === 0 ? 'bi-check-lg' : 'bi-x-lg') + '"></i> Audio</span>',
-          '            <span><i class="bi ' + (packageData.features.ads.enabled ? 'bi-x-lg' : 'bi-check-lg') + '"></i> Iklan</span>',
-          '        </div>',
-          '    </div>',
-          '</div>'
-      ].join('');
-  } else {
-      if (this.isValidLicenseFormat(key)) {
-          packagePreview.innerHTML = [
-              '<div class="package-invalid">',
-              '    <div class="package-icon">',
-              '        <i class="bi bi-exclamation-circle"></i>',
-              '    </div>',
-              '    <div class="package-info">',
-              '        <h4>Kode Tidak Dikenali</h4>',
-              '        <p>Kode lisensi tidak ditemukan dalam database</p>',
-              '    </div>',
-          '</div>'
-          ].join('');
-      } else {
-          packagePreview.innerHTML = [
-              '<div class="preview-placeholder">',
-              '    <i class="bi bi-key"></i>',
-              '    <p>Masukkan kode lisensi yang valid</p>',
-              '</div>'
-          ].join('');
-      }
-  }
-};
+    var packagePreview = document.getElementById('packagePreview');
+    if (!packagePreview) return;
+    
+    if (!key) {
+        packagePreview.innerHTML = [
+            '<div class="preview-placeholder">',
+            '    <i class="bi bi-box"></i>',
+            '    <p>Paket akan terdeteksi otomatis</p>',
+            '</div>'
+        ].join('');
+        return;
+    }
+    
+    var licenseInfo = this.validLicenseKeys[key];
+    
+    // Cek status lisensi dari Firebase atau data lokal
+    var self = this;
+    
+    // Function untuk menampilkan preview berdasarkan status
+    function showStatusPreview(status, message, type) {
+        var icon = '';
+        var colorClass = '';
+        
+        if (type === 'active-used') {
+            icon = 'bi-exclamation-triangle';
+            colorClass = 'package-used';
+        } else if (type === 'expired') {
+            icon = 'bi-calendar-x';
+            colorClass = 'package-expired';
+        }
+        
+        packagePreview.innerHTML = [
+            '<div class="package-status ' + colorClass + '">',
+            '    <div class="package-icon">',
+            '        <i class="bi ' + icon + '"></i>',
+            '    </div>',
+            '    <div class="package-info">',
+            '        <h4>' + status + '</h4>',
+            '        <p>' + message + '</p>',
+            '        <div class="package-warning">',
+            '            <i class="bi bi-exclamation-circle"></i>',
+            '            <span>Kode ini tidak dapat digunakan</span>',
+            '        </div>',
+            '    </div>',
+            '</div>'
+        ].join('');
+    }
+    
+    if (licenseInfo) {
+        // Cek status dari Firebase atau data lokal
+        this.checkLicenseStatus(key, function(statusData) {
+            if (statusData) {
+                if (statusData.status === 'active' && statusData.deviceId !== self.deviceId) {
+                    // Kode aktif di perangkat lain
+                    var expiryDate = new Date(statusData.expiryDate || Date.now() + 365 * 24 * 60 * 60 * 1000);
+                    showStatusPreview(
+                        'Kode Sedang Aktif',
+                        'Kode Lisensi telah dipakai pada perangkat lain<br>Device ID: ' + (statusData.deviceId || 'Unknown'),
+                        'active-used'
+                    );
+                } else if (statusData.status === 'expired' || statusData.isExpired) {
+                    // Kode kadaluarsa
+                    var expiryDate = new Date(statusData.expiryDate || Date.now());
+                    showStatusPreview(
+                        'Kode Kadaluarsa',
+                        'Kode Lisensi telah Kadaluarsa pada tanggal ' + expiryDate.toLocaleDateString('id-ID'),
+                        'expired'
+                    );
+                } else {
+                    // Kode valid dan dapat digunakan
+                    var packageData = self.licensePackages[licenseInfo.package];
+                    
+                    packagePreview.innerHTML = [
+                        '<div class="package-detected ' + licenseInfo.package + '">',
+                        '    <div class="package-icon">',
+                        '        <i class="bi bi-shield-check"></i>',
+                        '    </div>',
+                        '    <div class="package-info">',
+                        '        <h4>' + packageData.name + '</h4>',
+                        '        <p>' + licenseInfo.expiryDays + ' hari aktif</p>',
+                        '        <div class="package-features">',
+                        '            <span><i class="bi bi-images"></i> ' + packageData.features.maxImages + ' gambar</span>',
+                        '            <span><i class="bi ' + (packageData.features.hiddenAudio.length === 0 ? 'bi-check-lg' : 'bi-x-lg') + '"></i> Audio</span>',
+                        '            <span><i class="bi ' + (packageData.features.ads.enabled ? 'bi-x-lg' : 'bi-check-lg') + '"></i> Iklan</span>',
+                        '        </div>',
+                        '    </div>',
+                        '</div>'
+                    ].join('');
+                }
+            } else {
+                // Status tidak ditemukan, tampilkan info biasa
+                var packageData = this.licensePackages[licenseInfo.package];
+                
+                packagePreview.innerHTML = [
+                    '<div class="package-detected ' + licenseInfo.package + '">',
+                    '    <div class="package-icon">',
+                    '        <i class="bi bi-shield-check"></i>',
+                    '    </div>',
+                    '    <div class="package-info">',
+                    '        <h4>' + packageData.name + '</h4>',
+                    '        <p>' + licenseInfo.expiryDays + ' hari aktif</p>',
+                    '        <div class="package-features">',
+                    '            <span><i class="bi bi-images"></i> ' + packageData.features.maxImages + ' gambar</span>',
+                    '            <span><i class="bi ' + (packageData.features.hiddenAudio.length === 0 ? 'bi-check-lg' : 'bi-x-lg') + '"></i> Audio</span>',
+                    '            <span><i class="bi ' + (packageData.features.ads.enabled ? 'bi-x-lg' : 'bi-check-lg') + '"></i> Iklan</span>',
+                    '        </div>',
+                    '    </div>',
+                '</div>'
+                ].join('');
+            }
+        }.bind(this));
+    } else {
+        // Cek apakah kode ada di Firebase dengan status tertentu
+        this.checkLicenseStatus(key, function(statusData) {
+            if (statusData) {
+                if (statusData.status === 'active' && statusData.deviceId !== self.deviceId) {
+                    var expiryDate = new Date(statusData.expiryDate || Date.now() + 365 * 24 * 60 * 60 * 1000);
+                    showStatusPreview(
+                        'Kode Sedang Aktif',
+                        'Kode Lisensi telah dipakai pada perangkat lain<br>Device ID: ' + (statusData.deviceId || 'Unknown'),
+                        'active-used'
+                    );
+                } else if (statusData.status === 'expired' || statusData.isExpired) {
+                    var expiryDate = new Date(statusData.expiryDate || Date.now());
+                    showStatusPreview(
+                        'Kode Kadaluarsa',
+                        'Kode Lisensi telah Kadaluarsa pada tanggal ' + expiryDate.toLocaleDateString('id-ID'),
+                        'expired'
+                    );
+                } else {
+                    // Kode tidak valid
+                    if (self.isValidLicenseFormat(key)) {
+                        packagePreview.innerHTML = [
+                            '<div class="package-invalid">',
+                            '    <div class="package-icon">',
+                            '        <i class="bi bi-exclamation-circle"></i>',
+                            '    </div>',
+                            '    <div class="package-info">',
+                            '        <h4>Kode Tidak Dikenali</h4>',
+                            '        <p>Kode lisensi tidak ditemukan dalam database</p>',
+                            '    </div>',
+                        '</div>'
+                        ].join('');
+                    } else {
+                        packagePreview.innerHTML = [
+                            '<div class="preview-placeholder">',
+                            '    <i class="bi bi-key"></i>',
+                            '    <p>Masukkan kode lisensi yang valid</p>',
+                            '</div>'
+                        ].join('');
+                    }
+                }
+            } else {
+                // Kode tidak valid
+                if (self.isValidLicenseFormat(key)) {
+                    packagePreview.innerHTML = [
+                        '<div class="package-invalid">',
+                        '    <div class="package-icon">',
+                        '        <i class="bi bi-exclamation-circle"></i>',
+                        '    </div>',
+                        '    <div class="package-info">',
+                        '        <h4>Kode Tidak Dikenali</h4>',
+                        '        <p>Kode lisensi tidak ditemukan dalam database</p>',
+                        '    </div>',
+                    '</div>'
+                    ].join('');
+                } else {
+                    packagePreview.innerHTML = [
+                        '<div class="preview-placeholder">',
+                        '    <i class="bi bi-key"></i>',
+                        '    <p>Masukkan kode lisensi yang valid</p>',
+                        '</div>'
+                    ].join('');
+                }
+            }
+        });
+    }
+  };
 
 // ==================== FUNGSI DEMO ====================
 OfflineLicenseSystem.prototype.checkDemoEligibility = function() {
@@ -6366,6 +6623,78 @@ OfflineLicenseSystem.prototype.addStyles = function() {
         margin-top: 25px;
     }
 
+    /* ==================== PACKAGE STATUS PREVIEW ==================== */
+    .package-status {
+        display: flex;
+        align-items: center;
+        gap: 20px;
+        padding: 15px;
+        border-radius: 10px;
+        animation: slideUp 0.3s ease;
+        color: #333333 ;
+        width: 100%;
+        border: 2px solid transparent;
+    }
+
+    .package-used {
+        background: rgba(255, 193, 7, 0.1) ;
+        border-color: rgba(255, 193, 7, 0.3);
+    }
+
+    .package-expired {
+        background: rgba(220, 53, 69, 0.1) ;
+        border-color: rgba(220, 53, 69, 0.3);
+    }
+
+    .package-status .package-icon {
+        font-size: 40px;
+        color: #dc3545;
+    }
+
+    .package-used .package-icon {
+        color: #ffc107;
+    }
+
+    .package-expired .package-icon {
+        color: #dc3545;
+    }
+
+    .package-status .package-info h4 {
+        margin: 0 0 5px 0;
+        font-size: 18px;
+        color: #333333 ;
+    }
+
+    .package-status .package-info p {
+        margin: 0 0 10px 0;
+        color: #666666 ;
+        font-size: 14px;
+    }
+
+    .package-warning {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: rgba(0, 0, 0, 0.05);
+        border-radius: 5px;
+        font-size: 12px;
+        color: #666;
+        margin-top: 10px;
+        border-left: 3px solid #dc3545;
+    }
+
+    .package-used .package-warning {
+        border-left-color: #ffc107;
+    }
+
+    .package-expired .package-warning {
+        border-left-color: #dc3545;
+    }
+
+    .package-warning i {
+        font-size: 14px;
+    }
 
   `;
   
