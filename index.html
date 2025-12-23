@@ -681,7 +681,7 @@
     </div>
     <!-- Tengah: Logo & Nama Masjid serta Alamat -->
     <div class="col-12 col-md-4 d-flex align-items-center justify-content-center mb-2 mb-md-0">
-      <img id="masjidLogo" src="logo.png" alt="Logo Masjid" class="img-fluid me-3" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+      <img id="masjidLogo" src="logo.png" alt="Logo Masjid" class="img-fluid me-3" style="border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);" onerror="this.src='logo.png'">
       <div>
         <h2 id="masjidName" class="mb-1" style="font-weight: 800; color: white;">Mahallah TV</h2>
         <p id="masjidAddress" class="mb-0" style="font-size: 14px; color: #c6f6d5;">Dev: Rocky CHK </p>
@@ -962,7 +962,7 @@
         <input type="file" class="form-control" id="logoInput" accept="image/*">
         <small class="text-muted">Upload logo (PNG/JPG, maks 500KB)</small>
         <div id="logoPreview" class="mt-2 text-center">
-          <img id="logoPreviewImg" src="logo.png" style="max-width: 200px; max-height: 200px;" class="img-thumbnail">
+          <img id="logoPreviewImg" src="logo.png" style="max-width: 200px; max-height: 200px;" class="img-thumbnail" onerror="this.src='logo.png'">
         </div>
       </div>
       <div class="mb-3">
@@ -1165,7 +1165,7 @@
     <div class="offcanvas-body">
       <div class="text-center mb-4">
         <div class="display-1 mb-2">🕌</div>
-        <h3>Adzan Mahallah TV</h3>
+        <h3>Adzan Al-Muthmainnah</h3>
         <p class="text-muted">v2.0 - Khusus STB Indihome HG680-P</p>
       </div>
       
@@ -1301,6 +1301,9 @@ window.onload = function() {
     }
 
     applyPrayerOffsets();
+
+    // Cleanup localStorage jika perlu
+    cleanupLocalStorage();
 
     
     // Setup event listeners sederhana
@@ -2550,7 +2553,7 @@ function updateCarouselIndicators(slideCount) {
 }
 
 function createLeftSlide1() {
-    var message = settings.customMessage || 'Selamat datang di Masjid Mahallah TV';
+    var message = settings.customMessage || 'Selamat datang di Masjid Al-Muthmainnah';
     return '<h5><i class="bi bi-chat-text text-primary"></i> </h5>' +
            '<div style="margin-top: 20px; font-size: 16px; line-height: 1.6;">' +
            message.replace(/\\n/g, '<br>') +
@@ -2720,6 +2723,26 @@ function loadSettings() {
         document.getElementById('runningText1').value = settings.runningText;
         document.getElementById('charCount').textContent = (settings.customMessage.length - (settings.customMessage.match(/\\\\n/g) || []).length * 2) + '/300 karakter';
         
+        // Load logo dari localStorage (priority) atau dari settings
+        var savedLogo = localStorage.getItem('masjid_logo');
+        if (savedLogo) {
+            // Gunakan logo dari localStorage
+            settings.logo = savedLogo;
+            document.getElementById('masjidLogo').src = savedLogo;
+            document.getElementById('logoPreviewImg').src = savedLogo;
+        } else if (settings.logo) {
+            // Gunakan logo dari settings
+            document.getElementById('masjidLogo').src = settings.logo;
+            document.getElementById('logoPreviewImg').src = settings.logo;
+        } else {
+            // Gunakan default
+            document.getElementById('masjidLogo').src = 'logo.png';
+            document.getElementById('logoPreviewImg').src = 'logo.png';
+        }
+
+        // Load logo dengan fallback
+        loadLogoWithFallback();
+        
         // Load gambar
         updateImagesList();
         
@@ -2730,10 +2753,37 @@ function loadSettings() {
 
 function saveSettings() {
     try {
-        // Simpan ke localStorage
-        localStorage.setItem('masjidSettings', JSON.stringify(settings));
+        // Cek ukuran settings sebelum disimpan (logo base64 bisa besar)
+        var settingsStr = JSON.stringify(settings);
+        if (settingsStr.length > 5000000) { // 5MB limit
+            console.warn('Settings terlalu besar, kompres atau hapus data yang tidak perlu');
+            
+            // Hapus logo dari settings jika terlalu besar, simpan terpisah
+            if (settings.logo) {
+                // Simpan logo terpisah di localStorage
+                localStorage.setItem('masjid_logo', settings.logo);
+                delete settings.logo; // Hapus dari settings object
+                settingsStr = JSON.stringify(settings);
+            }
+        }
+        
+        localStorage.setItem('masjidSettings', settingsStr);
         return true;
     } catch (e) {
+        console.error('Error saveSettings:', e);
+        
+        // Coba hapus logo jika masih error
+        if (settings.logo) {
+            delete settings.logo;
+            try {
+                localStorage.setItem('masjidSettings', JSON.stringify(settings));
+                return true;
+            } catch (e2) {
+                console.error('Masih error setelah hapus logo:', e2);
+                return false;
+            }
+        }
+        
         return false;
     }
 }
@@ -2800,18 +2850,25 @@ function saveMasjidData() {
         var file = logoInput.files[0];
         var reader = new FileReader();
         reader.onload = function(e) {
+            // Simpan data base64 ke settings
             settings.logo = e.target.result;
+            
+            // Update preview
             document.getElementById('masjidLogo').src = e.target.result;
             document.getElementById('logoPreviewImg').src = e.target.result;
             
+            // Simpan settings
             if (saveSettings()) {
-                alert('Data masjid berhasil disimpan!');
+                // Simpan juga ke localStorage terpisah untuk logo
+                localStorage.setItem('masjid_logo', e.target.result);
+                showToast('✅ Data masjid berhasil disimpan!', 'success');
             }
         };
         reader.readAsDataURL(file);
     } else {
+        // Jika tidak ada file baru, tetap simpan data text
         if (saveSettings()) {
-            alert('Data masjid berhasil disimpan!');
+            showToast('✅ Data masjid berhasil disimpan!', 'success');
         }
     }
     
@@ -2880,6 +2937,38 @@ function showPrayerSettings(prayer) {
   // Tampilkan modal
   const modal = new bootstrap.Modal(document.getElementById('prayerSettingsModal'));
   modal.show();
+}
+
+// Fungsi untuk membersihkan localStorage jika penuh
+function cleanupLocalStorage() {
+    try {
+        // Cek total size
+        var totalSize = 0;
+        for (var key in localStorage) {
+            if (localStorage.hasOwnProperty(key)) {
+                totalSize += localStorage[key].length * 2; // UTF-16, 2 bytes per char
+            }
+        }
+        
+        console.log('Total localStorage size:', (totalSize / 1024 / 1024).toFixed(2), 'MB');
+        
+        // Jika melebihi 4MB, hapus data lama
+        if (totalSize > 4 * 1024 * 1024) { // 4MB
+            console.log('LocalStorage hampir penuh, membersihkan...');
+            
+            // Hapus gambar yang sudah tidak digunakan
+            var uploadedImages = settings.uploadedImages || [];
+            var imagesToKeep = uploadedImages.slice(-5); // Keep only last 5 images
+            
+            if (uploadedImages.length > imagesToKeep.length) {
+                settings.uploadedImages = imagesToKeep;
+                saveSettings();
+                console.log('Dihapus', uploadedImages.length - imagesToKeep.length, 'gambar lama');
+            }
+        }
+    } catch (e) {
+        console.error('Error cleanupLocalStorage:', e);
+    }
 }
 
 function updatePrayerTimeWithOffset(prayer, offset) {
@@ -3062,13 +3151,21 @@ function setupMenuEvents() {
                 settings.runningText = 'Mohon untuk Menonaktifkan atau Mode Silent HP Anda jika Iqamah Telah Tiba, Agar tidak mengganggu kekhusyukan Shalat';
                 settings.customMessage = 'Selamat datang di Masjid Mahallah TV\\n\\nMari bersama menjaga kebersihan dan ketertiban masjid untuk kenyamanan beribadah kita semua.';
                 settings.uploadedImages = [];
-                
+                settings.logo = null; // Hapus logo dari settings
+            
+                // Hapus logo dari localStorage
+                localStorage.removeItem('masjid_logo');
+            
                 if (saveSettings()) {
+                    // Reset logo ke default
+                    document.getElementById('masjidLogo').src = 'logo.png';
+                    document.getElementById('logoPreviewImg').src = 'logo.png';
+                    
                     loadSettings();
                     loadLeftCarousel();
                     loadMainCarousel();
                     updateRunningTextUI();
-                    alert('Data berhasil direset!');
+                    showToast('✅ Data berhasil direset!', 'success');
                 }
             }
         };
@@ -3098,6 +3195,39 @@ function setupMenuEvents() {
             });
         }
     });
+}
+
+// Fungsi untuk preview logo sebelum diupload
+function setupLogoPreview() {
+    var logoInput = document.getElementById('logoInput');
+    if (logoInput) {
+        logoInput.addEventListener('change', function(e) {
+            if (this.files && this.files[0]) {
+                var reader = new FileReader();
+                reader.onload = function(e) {
+                    // Tampilkan preview
+                    document.getElementById('logoPreviewImg').src = e.target.result;
+                    document.getElementById('logoPreviewImg').style.display = 'block';
+                };
+                reader.readAsDataURL(this.files[0]);
+            }
+        });
+    }
+}
+
+// Panggil di setupSimpleEvents():
+function setupSimpleEvents() {
+    // Setup form submit untuk STB
+    setupFormEvents();
+    
+    // Setup click events untuk waktu sholat
+    setupPrayerClickEvents();
+    
+    // Setup menu events
+    setupMenuEvents();
+    
+    // Setup logo preview
+    setupLogoPreview();
 }
 
 // ==================== FUNGSI OFFSET WAKTU MANUAL ====================
@@ -3880,6 +4010,9 @@ window.onload = function() {
 
     applyPrayerOffsets();
 
+    // Cleanup localStorage jika perlu
+    cleanupLocalStorage();
+
     // Setup event listeners sederhana
     setupSimpleEvents();
     
@@ -3896,6 +4029,33 @@ window.onload = function() {
         }
     }
 };
+
+// Fungsi untuk memuat logo dengan timeout
+function loadLogoWithFallback() {
+    var logoElement = document.getElementById('masjidLogo');
+    var previewElement = document.getElementById('logoPreviewImg');
+    
+    if (!logoElement || !previewElement) return;
+    
+    // Cek localStorage untuk logo
+    var savedLogo = localStorage.getItem('masjid_logo');
+    
+    if (savedLogo) {
+        // Gunakan timeout untuk mencegah blocking
+        setTimeout(function() {
+            try {
+                // Coba set logo
+                logoElement.src = savedLogo;
+                previewElement.src = savedLogo;
+            } catch (e) {
+                console.error('Error loading logo from localStorage:', e);
+                // Fallback ke default
+                logoElement.src = 'logo.png';
+                previewElement.src = 'logo.png';
+            }
+        }, 100);
+    }
+}
 
 // Modifikasi fungsi stopAllAudio untuk integrasi
 function stopAllAudio() {
@@ -3952,5 +4112,4 @@ function stopAllAudio() {
 </script>
 </body>
 </html>
-
 
