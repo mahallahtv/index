@@ -434,15 +434,19 @@ OfflineLicenseSystem.prototype.initialize = function() {
     
     // 5. Cek apakah ada lisensi aktif atau demo aktif
     var hasActiveLicense = this.checkExistingLicense();
-    var hasDemo = this.checkDemoStatus();
     
-    // 6. Jika tidak ada lisensi dan demo belum pernah digunakan, tampilkan demo popup
-    if (!hasActiveLicense && !hasDemo) {
-        this.showWelcomeDemoPopup();
+    // 6. Jika ada demo aktif, terapkan fitur demo
+    if (hasActiveLicense && this.currentLicense && this.currentLicense.package === 'demo') {
+        console.log('Demo aktif ditemukan, menerapkan fitur demo...');
+        this.applyDemoFeatures();
+        this.showDemoBriefInfo();
+        
+        // Setup timer untuk expired popup
+        this.setupDemoExpiryTimer();
         return true;
     }
     
-    // 7. Jika ada lisensi aktif, validasi
+    // 7. Jika ada lisensi aktif (bukan demo), validasi
     if (hasActiveLicense) {
         var isValid = this.validateLicense();
         
@@ -457,8 +461,18 @@ OfflineLicenseSystem.prototype.initialize = function() {
         }
     }
     
-    // 8. Setup iklan jika diperlukan
-    this.setupAds();
+    // 8. Jika tidak ada lisensi aktif, cek apakah demo pernah digunakan
+    var demoUsed = localStorage.getItem(this.demoUsedKey);
+    if (demoUsed !== 'true') {
+        // Demo belum pernah digunakan, tampilkan popup demo
+        this.showWelcomeDemoPopup();
+    } else {
+        // Demo sudah pernah digunakan, tampilkan popup expired
+        this.showDemoExpiredPopup();
+    }
+
+    // 9. Setup demo monitor
+    this.startDemoMonitor();
     
     return false;
 };
@@ -469,7 +483,22 @@ OfflineLicenseSystem.prototype.loadLicense = function() {
     try {
         var saved = localStorage.getItem('adzan_offline_license');
         if (saved) {
-            this.currentLicense = JSON.parse(saved);
+            var license = JSON.parse(saved);
+            
+            // Cek jika ini adalah demo yang sudah expired
+            if (license.package === 'demo') {
+                var expiryDate = new Date(license.expiry);
+                var now = new Date();
+                
+                if (now >= expiryDate) {
+                    // Demo expired, hapus
+                    console.log('Demo sudah expired, membersihkan...');
+                    this.cleanupExpiredDemo();
+                    return;
+                }
+            }
+            
+            this.currentLicense = license;
             console.log('Lisensi ditemukan:', this.currentLicense.package);
         }
     } catch (error) {
@@ -480,15 +509,18 @@ OfflineLicenseSystem.prototype.loadLicense = function() {
 
 OfflineLicenseSystem.prototype.saveLicense = function() {
     try {
+        // Simpan license
         localStorage.setItem('adzan_offline_license', JSON.stringify(this.currentLicense));
         
-        // Juga simpan di key lama untuk kompatibilitas
-        localStorage.setItem('adzanAppLicense', JSON.stringify({
-            package: this.currentLicense.package,
-            startDate: this.currentLicense.startDate,
-            endDate: this.currentLicense.expiry,
-            paymentStatus: this.currentLicense.status === 'active' ? 'paid' : 'pending'
-        }));
+        // Untuk demo, juga simpan di key lama untuk kompatibilitas
+        if (this.currentLicense.package === 'demo') {
+            localStorage.setItem('adzanAppLicense', JSON.stringify({
+                package: 'demo',
+                startDate: this.currentLicense.startDate,
+                endDate: this.currentLicense.expiry,
+                paymentStatus: 'demo'
+            }));
+        }
         
         return true;
     } catch (error) {
@@ -3060,12 +3092,87 @@ OfflineLicenseSystem.prototype.loadValidLicenseKeys = function() {
 // ==================== FUNGSI BARU: CEK STATUS DEMO ====================
 OfflineLicenseSystem.prototype.checkDemoStatus = function() {
     var demoUsed = localStorage.getItem(this.demoUsedKey);
-    return demoUsed === 'true';
+    if (demoUsed !== 'true') return false;
+    
+    // Cek apakah ada lisensi demo yang masih aktif
+    if (this.currentLicense && this.currentLicense.package === 'demo') {
+        var expiryDate = new Date(this.currentLicense.expiry);
+        var now = new Date();
+        
+        if (now < expiryDate) {
+            // Demo masih aktif
+            return true;
+        } else {
+            // Demo sudah expired, hapus status
+            this.cleanupExpiredDemo();
+            return false;
+        }
+    }
+    
+    return false;
+};
+
+// ==================== FUNGSI BARU: CLEANUP DEMO EXPIRED ====================
+OfflineLicenseSystem.prototype.cleanupExpiredDemo = function() {
+    if (this.currentLicense && this.currentLicense.package === 'demo') {
+        // Hapus lisensi demo dari localStorage
+        localStorage.removeItem('adzan_offline_license');
+        localStorage.removeItem('adzanAppLicense');
+        
+        // Reset current license
+        this.currentLicense = null;
+        
+        // Hentikan iklan jika berjalan
+        if (this.adsTimer) {
+            clearInterval(this.adsTimer);
+            this.adsTimer = null;
+        }
+    }
 };
 
 // ==================== FUNGSI BARU: CEK LISENSI YANG ADA ====================
 OfflineLicenseSystem.prototype.checkExistingLicense = function() {
-    return this.currentLicense !== null && this.currentLicense.status !== 'demo';
+    if (!this.currentLicense) return false;
+    
+    // Jika ini demo, cek apakah masih aktif
+    if (this.currentLicense.package === 'demo') {
+        var expiryDate = new Date(this.currentLicense.expiry);
+        var now = new Date();
+        
+        if (now < expiryDate) {
+            // Demo masih aktif
+            return true;
+        } else {
+            // Demo expired, hapus
+            this.cleanupExpiredDemo();
+            return false;
+        }
+    }
+    
+    // Untuk lisensi biasa (trial, basic, premium, vip)
+    return this.currentLicense.status !== 'demo';
+};
+
+// ==================== FUNGSI BARU: SETUP TIMER EXPIRY DEMO ====================
+OfflineLicenseSystem.prototype.setupDemoExpiryTimer = function() {
+    if (!this.currentLicense || this.currentLicense.package !== 'demo') return;
+    
+    var expiryDate = new Date(this.currentLicense.expiry);
+    var now = new Date();
+    var timeRemaining = expiryDate - now;
+    
+    if (timeRemaining <= 0) {
+        // Demo sudah expired
+        this.showDemoExpiredPopup();
+        return;
+    }
+    
+    var self = this;
+    setTimeout(function() {
+        self.showDemoExpiredPopup();
+    }, timeRemaining);
+    
+    console.log('Timer demo diset untuk', Math.floor(timeRemaining / 1000 / 60), 'menit lagi');
 };
 
 // ==================== FUNGSI BARU: POPUP WELCOME DEMO ====================
@@ -3286,26 +3393,21 @@ OfflineLicenseSystem.prototype.startDemoMode = function() {
     expiryDate.setMinutes(startDate.getMinutes() + 15); // 15 menit
     
     this.currentLicense = {
-        key: 'DEMO-MODE',
+        key: 'DEMO-MODE-' + Date.now(),
         package: 'demo',
         startDate: startDate.toISOString(),
         expiry: expiryDate.toISOString(),
         deviceId: this.deviceId,
         activatedAt: new Date().toISOString(),
-        status: 'demo'
+        status: 'active'
     };
     
     this.saveLicense();
     this.applyDemoFeatures();
     this.showDemoBriefInfo();
+    this.setupDemoExpiryTimer();
     
     this.showToast('Mode demo aktif selama 15 menit!', 'info');
-    
-    // Set timer untuk expired popup
-    var self = this;
-    setTimeout(function() {
-        self.showDemoExpiredPopup();
-    }, 15 * 60 * 1000);
 };
 
 // ==================== FUNGSI BARU: POPUP DEMO EXPIRED ====================
@@ -3532,6 +3634,24 @@ OfflineLicenseSystem.prototype.showDemoTimeRemainingPopup = function() {
     
     // Simpan interval untuk di-clear saat popup ditutup
     overlay.timerInterval = timerInterval;
+};
+
+// Di bagian akhir file, tambahkan interval untuk cek demo
+// Tambahkan di global scope atau di constructor:
+OfflineLicenseSystem.prototype.startDemoMonitor = function() {
+    var self = this;
+    // Cek setiap 30 detik
+    setInterval(function() {
+        if (self.currentLicense && self.currentLicense.package === 'demo') {
+            var expiryDate = new Date(self.currentLicense.expiry);
+            var now = new Date();
+            
+            if (now >= expiryDate) {
+                // Demo expired
+                self.showDemoExpiredPopup();
+            }
+        }
+    }, 30000); // 30 detik
 };
 
 // ==================== STYLING ====================
